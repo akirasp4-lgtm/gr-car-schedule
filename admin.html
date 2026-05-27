@@ -86,8 +86,15 @@ document.getElementById('pin-input').addEventListener('keypress', e => { if (e.k
 
 async function tryPin() {
   const pin = document.getElementById('pin-input').value;
-  const token = localStorage.getItem('SCHEDULE_TOKEN') || prompt('SCHEDULE_TOKEN を入力');
-  if (!token) return;
+  let token = localStorage.getItem('SCHEDULE_TOKEN');
+  if (!token) {
+    token = prompt('SCHEDULE_TOKEN を入力');
+    if (!token) {
+      document.getElementById('pin-err').textContent = 'SCHEDULE_TOKEN が未入力です';
+      document.getElementById('pin-err').style.display = 'block';
+      return;
+    }
+  }
   localStorage.setItem('SCHEDULE_TOKEN', token);
 
   state.pin = pin;

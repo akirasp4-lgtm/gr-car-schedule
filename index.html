@@ -16,8 +16,8 @@
   html, body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Yu Gothic', sans-serif; background: #f2f2f7; color: #1a1a1a; -webkit-tap-highlight-color: transparent; overscroll-behavior: none; }
   body { padding-bottom: env(safe-area-inset-bottom); }
 
-  /* ===== ヘッダ ===== */
-  header { background: #1D9E75; color: #fff; padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+  /* ===== ヘッダ (iPhone notch 対応) ===== */
+  header { background: #1D9E75; color: #fff; padding: 12px 16px; padding-top: calc(12px + env(safe-area-inset-top)); display: flex; align-items: center; justify-content: space-between; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
   header h1 { margin: 0; font-size: 17px; }
 
   /* ===== カレンダー ===== */
@@ -407,8 +407,21 @@ function closeCalDay() {
 function renderCalDay() {
   const dateStr = state.selectedCalDate;
   if (!dateStr) return;
+  // 不正な日付文字列を防御
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    document.getElementById('cal-day-title').textContent = '⚠ 日付エラー';
+    document.getElementById('cal-day-list').innerHTML =
+      '<div class="day-empty">日付の形式が正しくありません</div>';
+    return;
+  }
   const [y, m, d] = dateStr.split('-').map(Number);
   const dayObj = new Date(y, m - 1, d);
+  if (isNaN(dayObj.getTime())) {
+    document.getElementById('cal-day-title').textContent = '⚠ 日付エラー';
+    document.getElementById('cal-day-list').innerHTML =
+      '<div class="day-empty">日付の解析に失敗しました</div>';
+    return;
+  }
   const dow = '日月火水木金土'[dayObj.getDay()];
   document.getElementById('cal-day-title').textContent = `📅 ${m}月${d}日 (${dow})`;
 
@@ -472,8 +485,17 @@ function renderCalDetail() {
   if (!s) {
     document.getElementById('cal-detail-body').innerHTML =
       '<div class="day-empty">予定が見つかりません</div>';
+    document.getElementById('cal-detail-title').textContent = '予定なし';
+    // 予定が無い時はボタン操作不可にする (state が古い時の誤動作防止)
+    const delBtn = document.getElementById('cal-detail-delete');
+    const editBtn = document.getElementById('cal-detail-edit');
+    delBtn.disabled = true; delBtn.style.opacity = '0.5';
+    editBtn.disabled = true; editBtn.style.opacity = '0.5';
     return;
   }
+  // 通常時はボタンを有効化
+  document.getElementById('cal-detail-edit').disabled = false;
+  document.getElementById('cal-detail-edit').style.opacity = '1';
   const dt = s['開始日時'] || '';
   const date = dt.substring(0, 10);
   const time = dt.substring(11, 16);
@@ -653,10 +675,14 @@ function hideAppLoading() {
 }
 
 async function loadData() {
-  const token = localStorage.getItem('SCHEDULE_TOKEN') || prompt('初回のみ: SCHEDULE_TOKEN を入力してください');
+  let token = localStorage.getItem('SCHEDULE_TOKEN');
   if (!token) {
-    hideAppLoading();  // prompt キャンセル時もカレンダーを見せる
-    return;
+    token = prompt('初回のみ: SCHEDULE_TOKEN を入力してください');
+    if (!token) {
+      hideAppLoading();
+      alert('SCHEDULE_TOKEN が未入力です。\n更新ボタンから再度入力してください。');
+      return;
+    }
   }
   localStorage.setItem('SCHEDULE_TOKEN', token);
 
@@ -701,9 +727,9 @@ function init() {
     closeCalDay();
     openAddModal(d);
   });
-  // モーダル背景タップで閉じる
+  // モーダル背景タップで閉じる (currentTarget で完全に背景のみ判定)
   document.getElementById('cal-day-modal').addEventListener('click', (e) => {
-    if (e.target.id === 'cal-day-modal') closeCalDay();
+    if (e.target === e.currentTarget) closeCalDay();
   });
 
   // 詳細フルスクリーンのボタン
@@ -845,11 +871,19 @@ document.getElementById('open-add-modal').addEventListener('click', openAddModal
 document.getElementById('cancel-btn').addEventListener('click', closeModal);
 
 // ====== Staff dropdown ======
+// 有効フラグ正規化 (TRUE/true/1/'1' のみ有効、それ以外はすべて無効扱い)
+function _isActiveFlag_(v) {
+  if (v === true || v === 1) return true;
+  if (v === false || v === 0 || v === null || v === undefined || v === '') return false;
+  const s = String(v).trim().toUpperCase();
+  return s === 'TRUE' || s === '1' || s === 'YES';
+}
+
 function populateStaffSelect() {
   const sel = document.getElementById('form-staff');
   sel.innerHTML = '<option value="">（選択してください）</option>' +
     state.staffs
-      .filter(s => s['有効フラグ'] !== false && s['有効フラグ'] !== 'FALSE' && s['有効フラグ'] !== 'false')
+      .filter(s => _isActiveFlag_(s['有効フラグ']))
       .map(s => `<option value="${escapeHtml(s['LINE_ID'] || s['氏名'])}">${escapeHtml(s['氏名'])}</option>`)
       .join('');
 }
