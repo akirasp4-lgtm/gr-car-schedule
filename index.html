@@ -78,6 +78,47 @@
   .chip.selected { background: #1D9E75; color: #fff; border-color: #1D9E75; box-shadow: 0 2px 4px rgba(29,158,117,0.3); }
   .chip.used { background: #f0f0f0; color: #999; cursor: not-allowed; opacity: 0.7; }
 
+  /* ===== 日別モーダル ===== */
+  .day-list-item { display: flex; gap: 10px; padding: 12px 10px; border-left: 4px solid #1D9E75; background: #fafafa; margin-bottom: 8px; border-radius: 6px; font-size: 14px; cursor: pointer; align-items: center; }
+  .day-list-item.workType-顧客対応 { border-color: #3B82F6; }
+  .day-list-item.workType-整備修理 { border-color: #d97706; }
+  .day-list-item.workType-仕入販売 { border-color: #6366f1; }
+  .day-list-item.workType-加盟外注 { border-color: #14b8a6; }
+  .day-list-item.workType-その他   { border-color: #6b7280; }
+  .day-list-item.cancelled { opacity: 0.5; text-decoration: line-through; }
+  .day-list-item .time { font-weight: 700; min-width: 56px; color: #1D9E75; }
+  .day-list-item .meta { flex: 1; line-height: 1.4; }
+  .day-list-item .meta .wt { font-size: 11px; color: #888; }
+  .day-list-item .chev { color: #ccc; font-size: 16px; }
+  .day-empty { color: #888; font-size: 13px; padding: 24px 8px; text-align: center; }
+  .swipe-hint { font-size: 11px; color: #aaa; text-align: center; margin-top: 8px; }
+
+  /* ===== 詳細フルスクリーン ===== */
+  .detail-fullscreen { display: none; position: fixed; inset: 0; background: #f2f2f7; z-index: 300; flex-direction: column; }
+  .detail-fullscreen.active { display: flex; }
+  .detail-fs-header { background: #1D9E75; color: #fff; padding: 14px 16px; padding-top: calc(14px + env(safe-area-inset-top)); display: flex; align-items: center; gap: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+  .detail-fs-header .back-btn { background: transparent; border: none; color: #fff; font-size: 22px; cursor: pointer; padding: 0 4px; }
+  .detail-fs-header .title { flex: 1; font-weight: 700; font-size: 16px; }
+  .detail-fs-body { flex: 1; overflow-y: auto; padding: 20px 16px 100px; -webkit-overflow-scrolling: touch; }
+  .detail-row { background: #fff; padding: 12px 14px; border-radius: 10px; margin-bottom: 8px; }
+  .detail-row .label { font-size: 11px; color: #888; margin-bottom: 4px; font-weight: 600; }
+  .detail-row .value { font-size: 15px; color: #1a1a1a; word-break: break-word; }
+  .detail-row .value.empty { color: #ccc; font-style: italic; }
+  .badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 700; color: #fff; }
+  .badge.workType-顧客対応 { background: #3B82F6; }
+  .badge.workType-整備修理 { background: #d97706; }
+  .badge.workType-仕入販売 { background: #6366f1; }
+  .badge.workType-加盟外注 { background: #14b8a6; }
+  .badge.workType-その他   { background: #6b7280; }
+  .badge.status-予約 { background: #6b7280; }
+  .badge.status-作業中 { background: #d97706; }
+  .badge.status-完了 { background: #1D9E75; }
+  .badge.status-キャンセル { background: #E8384F; }
+  .detail-fs-actions { position: fixed; bottom: 0; left: 0; right: 0; background: #fff; padding: 12px; padding-bottom: calc(12px + env(safe-area-inset-bottom)); display: flex; gap: 8px; box-shadow: 0 -2px 8px rgba(0,0,0,0.08); z-index: 301; }
+  .detail-fs-actions .btn { flex: 1; padding: 12px; border-radius: 10px; border: none; font-size: 15px; font-weight: 600; cursor: pointer; min-height: 46px; }
+  .detail-fs-actions .btn-primary { background: #1D9E75; color: #fff; }
+  .detail-fs-actions .btn-danger { background: #E8384F; color: #fff; }
+
   /* ===== install banner ===== */
   .install-banner { position: fixed; bottom: 80px; left: 16px; right: 16px; background: #fff; padding: 12px; border-radius: 10px; box-shadow: 0 4px 16px rgba(0,0,0,0.2); display: none; z-index: 150; }
   .install-banner.active { display: block; }
@@ -186,6 +227,32 @@
   </div>
 </div>
 
+<!-- 日別モーダル (date タップで開く) -->
+<div class="modal-bg" id="cal-day-modal">
+  <div class="modal">
+    <h2 id="cal-day-title">— 月 — 日</h2>
+    <div id="cal-day-list"></div>
+    <div class="swipe-hint">← 翌日 / 前日 → スワイプ可</div>
+    <div class="actions">
+      <button class="btn btn-secondary" id="cal-day-close">閉じる</button>
+      <button class="btn btn-primary" id="cal-day-add">＋ この日に予定追加</button>
+    </div>
+  </div>
+</div>
+
+<!-- 予定詳細フルスクリーン -->
+<div class="detail-fullscreen" id="cal-detail-modal">
+  <div class="detail-fs-header">
+    <button class="back-btn" id="cal-detail-back">←</button>
+    <div class="title" id="cal-detail-title">予定詳細</div>
+  </div>
+  <div class="detail-fs-body" id="cal-detail-body"></div>
+  <div class="detail-fs-actions">
+    <button class="btn btn-danger" id="cal-detail-delete">削除</button>
+    <button class="btn btn-primary" id="cal-detail-edit">編集</button>
+  </div>
+</div>
+
 <!-- インストール案内バナー -->
 <div class="install-banner" id="install-banner">
   <div style="font-size:13px;margin-bottom:6px;font-weight:600">📱 ホーム画面に追加</div>
@@ -208,6 +275,8 @@ const state = {
   currentDate: new Date(),
   todayStr: '',
   selectedScheduleId: null,
+  selectedCalDate: null,    // 日別モーダル中の日付 (yyyy-MM-dd)
+  selectedDetailId: null,   // 詳細フルスクリーン中の予定ID
 };
 
 // ====== Utils ======
@@ -281,16 +350,8 @@ function renderCalendar() {
     }
 
     cell.innerHTML = html;
-    // chip クリック → 編集モーダル、それ以外（空白） → 新規追加モーダル
-    cell.addEventListener('click', (e) => {
-      const chip = e.target.closest('.cal-chip');
-      if (chip && chip.dataset.id) {
-        e.stopPropagation();
-        openEditModal(chip.dataset.id);
-      } else {
-        openDayDetail(dateStr);
-      }
-    });
+    // セル全体タップで日別モーダルを開く (chip 含む)
+    cell.addEventListener('click', () => openCalDay(dateStr));
     cal.appendChild(cell);
   }
 
@@ -305,9 +366,189 @@ function renderCalendar() {
   }
 }
 
-function openDayDetail(dateStr) {
-  // 日付を引数で渡してリセット競合を防ぐ
-  openAddModal(dateStr);
+// ====== 日別モーダル ======
+function openCalDay(dateStr) {
+  state.selectedCalDate = dateStr;
+  renderCalDay();
+  document.getElementById('cal-day-modal').classList.add('active');
+  hapticTap();
+}
+function closeCalDay() {
+  document.getElementById('cal-day-modal').classList.remove('active');
+  state.selectedCalDate = null;
+}
+function renderCalDay() {
+  const dateStr = state.selectedCalDate;
+  if (!dateStr) return;
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dayObj = new Date(y, m - 1, d);
+  const dow = '日月火水木金土'[dayObj.getDay()];
+  document.getElementById('cal-day-title').textContent = `📅 ${m}月${d}日 (${dow})`;
+
+  const list = document.getElementById('cal-day-list');
+  const items = state.schedules
+    .filter(s => (s['開始日時'] || '').substring(0, 10) === dateStr)
+    .sort((a, b) => (a['開始日時'] || '').localeCompare(b['開始日時'] || ''));
+
+  if (items.length === 0) {
+    list.innerHTML = '<div class="day-empty">この日の予定はありません</div>';
+    return;
+  }
+
+  list.innerHTML = items.map(s => {
+    const time = (s['開始日時'] || '').substring(11, 16) || '--:--';
+    const wt = s['作業区分'] || 'その他';
+    const cancelled = String(s['状態'] || '').trim() === 'キャンセル';
+    const lines = [];
+    if (s['車両名']) lines.push(s['車両名']);
+    if (s['担当スタッフ']) lines.push('担当: ' + s['担当スタッフ']);
+    if (s['場所・行先']) lines.push(s['場所・行先']);
+    if (s['メモ']) lines.push(s['メモ']);
+    const main = lines[0] || wt;
+    const sub = lines.slice(1).join(' / ');
+    const safeId = String(s['予定ID'] || '').replace(/"/g, '&quot;');
+    return `<div class="day-list-item workType-${wt}${cancelled ? ' cancelled' : ''}" data-id="${safeId}">
+      <span class="time">${time}</span>
+      <span class="meta">
+        <div>${main}</div>
+        ${sub ? `<div class="wt">${sub}</div>` : `<div class="wt">${wt}</div>`}
+      </span>
+      <span class="chev">›</span>
+    </div>`;
+  }).join('');
+
+  list.querySelectorAll('.day-list-item').forEach(el => {
+    el.addEventListener('click', () => openCalDetail(el.dataset.id));
+  });
+}
+function shiftCalDay(delta) {
+  if (!state.selectedCalDate) return;
+  const [y, m, d] = state.selectedCalDate.split('-').map(Number);
+  const dt = new Date(y, m - 1, d + delta);
+  openCalDay(toDateStr(dt));
+}
+
+// ====== 詳細フルスクリーン ======
+function openCalDetail(scheduleId) {
+  state.selectedDetailId = scheduleId;
+  renderCalDetail();
+  document.getElementById('cal-detail-modal').classList.add('active');
+  hapticTap();
+}
+function closeCalDetail() {
+  document.getElementById('cal-detail-modal').classList.remove('active');
+  state.selectedDetailId = null;
+}
+function renderCalDetail() {
+  const id = state.selectedDetailId;
+  if (!id) return;
+  const s = state.schedules.find(x => x['予定ID'] === id);
+  if (!s) {
+    document.getElementById('cal-detail-body').innerHTML =
+      '<div class="day-empty">予定が見つかりません</div>';
+    return;
+  }
+  const dt = s['開始日時'] || '';
+  const date = dt.substring(0, 10);
+  const time = dt.substring(11, 16);
+  const [y, m, d] = (date || '----').split('-');
+  const wt = s['作業区分'] || 'その他';
+  const st = String(s['状態'] || '予約').trim();
+
+  document.getElementById('cal-detail-title').textContent = `${m || '?'}月${d || '?'}日 ${time || '--:--'}`;
+
+  const rows = [
+    { label: '日時', value: `${y}年${m}月${d}日 ${time || '--:--'}`, raw: dt },
+    { label: '作業区分', html: `<span class="badge workType-${wt}">${wt}</span>` },
+    { label: '状態',     html: `<span class="badge status-${st}">${st}</span>` },
+    { label: '担当スタッフ', value: s['担当スタッフ'] || '' },
+    { label: '車両',     value: s['車両名'] ? `${s['車両名']}${s['ナンバー'] ? ' (' + s['ナンバー'] + ')' : ''}` : '' },
+    { label: '場所・行先', value: s['場所・行先'] || '' },
+    { label: 'メモ',     value: s['メモ'] || '' },
+    { label: '登録元',   value: s['ソース'] || s['source'] || '' },
+    { label: '予定ID',   value: s['予定ID'] || '' }
+  ];
+  document.getElementById('cal-detail-body').innerHTML = rows.map(r => {
+    const content = r.html
+      ? r.html
+      : (r.value
+          ? `<div class="value">${String(r.value).replace(/</g,'&lt;')}</div>`
+          : `<div class="value empty">—</div>`);
+    return `<div class="detail-row">
+      <div class="label">${r.label}</div>
+      ${r.html ? `<div class="value">${r.html}</div>` : content}
+    </div>`;
+  }).join('');
+
+  // 削除ボタンの状態によって表示変更
+  const delBtn = document.getElementById('cal-detail-delete');
+  if (st === 'キャンセル') {
+    delBtn.textContent = 'キャンセル済';
+    delBtn.disabled = true;
+    delBtn.style.opacity = '0.5';
+  } else {
+    delBtn.textContent = '削除';
+    delBtn.disabled = false;
+    delBtn.style.opacity = '1';
+  }
+}
+function shiftCalDetail(delta) {
+  // 同じ日内で前後の予定にスワイプ
+  if (!state.selectedDetailId) return;
+  const cur = state.schedules.find(x => x['予定ID'] === state.selectedDetailId);
+  if (!cur) return;
+  const dateStr = (cur['開始日時'] || '').substring(0, 10);
+  const sameDay = state.schedules
+    .filter(s => (s['開始日時'] || '').substring(0, 10) === dateStr)
+    .sort((a, b) => (a['開始日時'] || '').localeCompare(b['開始日時'] || ''));
+  const idx = sameDay.findIndex(x => x['予定ID'] === state.selectedDetailId);
+  if (idx < 0) return;
+  const next = sameDay[idx + delta];
+  if (next) {
+    openCalDetail(next['予定ID']);
+  }
+}
+
+// ====== 横スワイプ汎用ハンドラ ======
+function attachSwipe(el, onLeft, onRight, scrollableEl) {
+  if (!el) return;
+  let startX = 0, startY = 0, active = false, startScrollLeft = 0;
+  el.addEventListener('touchstart', e => {
+    if (e.touches.length !== 1) { active = false; return; }
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    startScrollLeft = scrollableEl ? scrollableEl.scrollLeft : 0;
+    active = true;
+  }, { passive: true });
+  el.addEventListener('touchend', e => {
+    if (!active || !e.changedTouches.length) return;
+    const dx = e.changedTouches[0].clientX - startX;
+    const dy = e.changedTouches[0].clientY - startY;
+    const scrolled = scrollableEl ? (scrollableEl.scrollLeft !== startScrollLeft) : false;
+    if (!scrolled && Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      if (dx < 0) onLeft && onLeft();
+      else onRight && onRight();
+    }
+    active = false;
+  }, { passive: true });
+}
+
+function initCalSwipe() {
+  // カレンダー: 左→翌月、右→前月
+  attachSwipe(document.getElementById('calendar'),
+    () => { state.currentDate.setMonth(state.currentDate.getMonth() + 1); renderCalendar(); hapticTap(); },
+    () => { state.currentDate.setMonth(state.currentDate.getMonth() - 1); renderCalendar(); hapticTap(); }
+  );
+  // 日別モーダル: 左→翌日、右→前日
+  attachSwipe(document.getElementById('cal-day-modal'),
+    () => shiftCalDay(1),
+    () => shiftCalDay(-1)
+  );
+  // 詳細フルスクリーン: 左→次の予定、右→閉じる
+  attachSwipe(document.getElementById('cal-detail-modal'),
+    () => shiftCalDetail(1),
+    () => closeCalDetail()
+  );
 }
 
 // ====== Month navigation ======
@@ -348,7 +589,7 @@ function renderTodayList() {
   }).join('');
 
   list.querySelectorAll('.list-item').forEach(el => {
-    el.addEventListener('click', () => openEditModal(el.dataset.id));
+    el.addEventListener('click', () => openCalDetail(el.dataset.id));
   });
 }
 
@@ -404,6 +645,52 @@ function init() {
   const today = new Date();
   state.todayStr = toDateStr(today);
   document.getElementById('refresh-btn').addEventListener('click', loadData);
+
+  // 日別モーダルのボタン
+  document.getElementById('cal-day-close').addEventListener('click', closeCalDay);
+  document.getElementById('cal-day-add').addEventListener('click', () => {
+    const d = state.selectedCalDate;
+    closeCalDay();
+    openAddModal(d);
+  });
+  // モーダル背景タップで閉じる
+  document.getElementById('cal-day-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'cal-day-modal') closeCalDay();
+  });
+
+  // 詳細フルスクリーンのボタン
+  document.getElementById('cal-detail-back').addEventListener('click', closeCalDetail);
+  document.getElementById('cal-detail-edit').addEventListener('click', () => {
+    const id = state.selectedDetailId;
+    closeCalDetail();
+    closeCalDay();
+    if (id) openEditModal(id);
+  });
+  document.getElementById('cal-detail-delete').addEventListener('click', async () => {
+    const id = state.selectedDetailId;
+    if (!id) return;
+    if (!confirm('この予定をキャンセル状態にしますか？\n(履歴は保持されます)')) return;
+    try {
+      const token = localStorage.getItem('SCHEDULE_TOKEN');
+      await postToGas('schedule_delete', { token, id });
+      hapticSuccess();
+      closeCalDetail();
+      await loadData();
+      // 日別モーダルが開いていれば再描画
+      if (state.selectedCalDate) renderCalDay();
+    } catch (err) {
+      alert('削除失敗: ' + err.message);
+    }
+  });
+
+  // ESC キーで詳細を閉じる
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (document.getElementById('cal-detail-modal').classList.contains('active')) closeCalDetail();
+    else if (document.getElementById('cal-day-modal').classList.contains('active')) closeCalDay();
+  });
+
+  initCalSwipe();
   loadData();
 }
 
