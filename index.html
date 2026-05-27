@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1D9E75">
+<title>車屋予定管理</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<style>
+  *,*::before,*::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Yu Gothic', sans-serif; background: #f2f2f7; color: #1a1a1a; -webkit-tap-highlight-color: transparent; overscroll-behavior: none; }
+  body { padding-bottom: env(safe-area-inset-bottom); }
+
+  /* ===== ヘッダ ===== */
+  header { background: #1D9E75; color: #fff; padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+  header h1 { margin: 0; font-size: 17px; }
+
+  /* ===== カレンダー ===== */
+  .cal-nav { display: flex; align-items: center; justify-content: center; gap: 16px; padding: 12px; background: #fff; border-bottom: 1px solid #e5e5e5; }
+  .cal-nav button { background: #fff; border: 1px solid #1D9E75; color: #1D9E75; padding: 6px 12px; border-radius: 8px; font-size: 14px; cursor: pointer; }
+  .cal-nav .label { font-weight: 700; font-size: 16px; min-width: 120px; text-align: center; }
+
+  .calendar { display: grid; grid-template-columns: repeat(7, 1fr); background: #fff; gap: 1px; }
+  .cal-header { background: #1D9E75; color: #fff; padding: 8px 4px; text-align: center; font-size: 12px; font-weight: 600; }
+  .cal-header.sat { background: #3B82F6; }
+  .cal-header.sun { background: #E8384F; }
+  .cal-cell { background: #fafafa; min-height: 72px; padding: 4px; font-size: 11px; cursor: pointer; position: relative; }
+  .cal-cell .date { font-weight: 600; }
+  .cal-cell.other-month { background: #f0f0f0; color: #999; }
+  .cal-cell.today { background: #fff8d0; border: 1px solid #d4a017; }
+  .cal-cell.sat { color: #3B82F6; }
+  .cal-cell.sun { color: #E8384F; }
+  .cal-chip { background: #1D9E75; color: #fff; font-size: 9px; padding: 1px 4px; border-radius: 3px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cal-chip.workType-顧客対応 { background: #3B82F6; }
+  .cal-chip.workType-整備修理 { background: #d97706; }
+  .cal-chip.workType-仕入販売 { background: #6366f1; }
+  .cal-chip.workType-加盟外注 { background: #14b8a6; }
+  .cal-chip.workType-その他   { background: #6b7280; }
+  .cal-chip.cancelled { opacity: 0.4; text-decoration: line-through; }
+  .cal-more { font-size: 9px; color: #888; margin-top: 2px; }
+
+  /* ===== 今日リスト ===== */
+  .today-section { background: #fff; padding: 12px 16px; margin-top: 8px; }
+  .today-title { font-weight: 700; color: #1D9E75; margin-bottom: 8px; }
+  .list-item { display: flex; gap: 8px; padding: 8px; border-left: 3px solid #1D9E75; background: #f9f9f9; margin-bottom: 6px; cursor: pointer; border-radius: 4px; font-size: 13px; }
+  .list-item.workType-顧客対応 { border-color: #3B82F6; }
+  .list-item.workType-整備修理 { border-color: #d97706; }
+  .list-item.workType-仕入販売 { border-color: #6366f1; }
+  .list-item.workType-加盟外注 { border-color: #14b8a6; }
+  .list-item .time { font-weight: 700; min-width: 50px; }
+  .list-item.cancelled { opacity: 0.5; text-decoration: line-through; }
+
+  /* ===== フローティング追加ボタン ===== */
+  .fab { position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); width: 56px; height: 56px; border-radius: 50%; background: #1D9E75; color: #fff; border: none; font-size: 28px; cursor: pointer; box-shadow: 0 4px 12px rgba(29,158,117,0.4); z-index: 100; }
+
+  /* ===== モーダル ===== */
+  .modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 200; padding: 0; align-items: flex-end; justify-content: center; }
+  .modal-bg.active { display: flex; }
+  .modal { background: #fff; width: 100%; max-width: 600px; border-radius: 20px 20px 0 0; padding: 16px; max-height: 90vh; overflow-y: auto; padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
+  .modal h2 { margin: 0 0 12px; font-size: 18px; }
+  .modal .field { margin-bottom: 12px; }
+  .modal label { display: block; font-size: 12px; color: #666; margin-bottom: 4px; font-weight: 600; }
+  .modal input, .modal select, .modal textarea { width: 100%; font-size: 16px; padding: 10px; min-height: 46px; border: 1px solid #d1d1d6; border-radius: 8px; background: #fff; }
+  .modal textarea { min-height: 80px; }
+  .modal .row { display: flex; gap: 8px; }
+  .modal .row > * { flex: 1; }
+  .modal .actions { display: flex; gap: 8px; margin-top: 16px; }
+  .modal .btn { flex: 1; padding: 12px; font-size: 15px; border-radius: 10px; border: none; cursor: pointer; min-height: 46px; }
+  .modal .btn-primary { background: #1D9E75; color: #fff; }
+  .modal .btn-secondary { background: #e5e5e5; color: #333; }
+  .modal .btn-danger { background: #E8384F; color: #fff; }
+  .modal .locked { opacity: 0.45; pointer-events: none; cursor: not-allowed; }
+
+  /* ===== Chip 群（作業区分・車両） ===== */
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { background: #fff; color: #1D9E75; border: 1px solid #A7F3D0; padding: 6px 12px; border-radius: 20px; font-size: 13px; cursor: pointer; user-select: none; }
+  .chip.selected { background: #1D9E75; color: #fff; border-color: #1D9E75; box-shadow: 0 2px 4px rgba(29,158,117,0.3); }
+  .chip.used { background: #f0f0f0; color: #999; cursor: not-allowed; opacity: 0.7; }
+
+  /* ===== install banner ===== */
+  .install-banner { position: fixed; bottom: 80px; left: 16px; right: 16px; background: #fff; padding: 12px; border-radius: 10px; box-shadow: 0 4px 16px rgba(0,0,0,0.2); display: none; z-index: 150; }
+  .install-banner.active { display: block; }
+
+  /* ===== レスポンシブ: PC ===== */
+  @media (min-width: 1024px) {
+    .calendar { max-width: 1000px; margin: 0 auto; }
+    .cal-cell { min-height: 120px; }
+    .today-section { max-width: 1000px; margin: 8px auto 0; }
+  }
+
+  /* ===== レスポンシブ: モバイル特有 ===== */
+  @media (max-width: 600px) {
+    .cal-cell { min-height: 60px; font-size: 10px; }
+    .cal-chip { font-size: 8px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🚗 車屋予定管理</h1>
+  <button id="refresh-btn" style="background:transparent;border:1px solid rgba(255,255,255,0.4);color:#fff;padding:4px 10px;border-radius:6px;font-size:12px;cursor:pointer">⟳ 更新</button>
+</header>
+
+<div class="cal-nav">
+  <button id="prev-month">◀</button>
+  <div class="label" id="month-label">— 年 — 月</div>
+  <button id="next-month">▶</button>
+</div>
+
+<div class="calendar" id="calendar"></div>
+
+<div class="today-section">
+  <div class="today-title" id="today-title">📅 今日 ——</div>
+  <div id="today-list"></div>
+</div>
+
+<button class="fab" id="open-add-modal">＋</button>
+
+<!-- 予定追加・編集モーダル -->
+<div class="modal-bg" id="schedule-modal-bg">
+  <div class="modal">
+    <h2 id="modal-title">予定を追加</h2>
+
+    <div class="field">
+      <label>作業区分 <span style="color:#E8384F">*</span></label>
+      <div class="chips" id="worktype-chips">
+        <div class="chip" data-worktype="顧客対応">顧客対応</div>
+        <div class="chip" data-worktype="整備修理">整備修理</div>
+        <div class="chip" data-worktype="仕入販売">仕入販売</div>
+        <div class="chip" data-worktype="加盟外注">加盟外注</div>
+        <div class="chip" data-worktype="その他">その他</div>
+      </div>
+      <input type="hidden" id="form-worktype" value="">
+    </div>
+
+    <div id="locked-fields" class="locked">
+      <div class="row">
+        <div class="field">
+          <label>日付 <span style="color:#E8384F">*</span></label>
+          <input type="date" id="form-date">
+        </div>
+        <div class="field">
+          <label>開始時刻 <span style="color:#E8384F">*</span></label>
+          <input type="time" id="form-time-start" value="09:00">
+        </div>
+      </div>
+
+      <div class="field">
+        <label>担当スタッフ</label>
+        <select id="form-staff"></select>
+      </div>
+
+      <div class="field">
+        <label>車両</label>
+        <select id="form-vehicle"></select>
+      </div>
+
+      <div class="field">
+        <label>場所・行先</label>
+        <input type="text" id="form-place" placeholder="例: 進栄自動車 / 横浜倉庫">
+      </div>
+
+      <div class="field">
+        <label>メモ</label>
+        <textarea id="form-memo" placeholder="任意"></textarea>
+      </div>
+
+      <div class="field" id="status-field" style="display:none">
+        <label>状態</label>
+        <div class="chips" id="status-chips">
+          <div class="chip" data-status="予約">予約</div>
+          <div class="chip" data-status="作業中">作業中</div>
+          <div class="chip" data-status="完了">完了</div>
+        </div>
+        <input type="hidden" id="form-status" value="予約">
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="btn btn-secondary" id="cancel-btn">キャンセル</button>
+      <button class="btn btn-danger" id="delete-btn" style="display:none">削除</button>
+      <button class="btn btn-primary" id="submit-btn">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- インストール案内バナー -->
+<div class="install-banner" id="install-banner">
+  <div style="font-size:13px;margin-bottom:6px;font-weight:600">📱 ホーム画面に追加</div>
+  <div style="font-size:11px;color:#666;margin-bottom:8px">アプリのように使えるようになります</div>
+  <div style="display:flex;gap:6px">
+    <button class="btn btn-secondary" id="install-dismiss" style="font-size:12px;padding:6px">あとで</button>
+    <button class="btn btn-primary" id="install-accept" style="font-size:12px;padding:6px">追加する</button>
+  </div>
+</div>
+
+<script>
+// JavaScript は Task 11 以降で追加
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbxQqIYdEQr4M4sVxEGCTP2_hbJtKcsXwBviQ16LtuoYNMPM-cU_mCXjP0hR69vUqzrB/exec';
+</script>
+</body>
+</html>
