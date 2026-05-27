@@ -309,6 +309,85 @@ document.getElementById('next-month').addEventListener('click', () => {
   state.currentDate.setMonth(state.currentDate.getMonth() + 1);
   renderCalendar();
 });
+
+// ====== Today list ======
+function renderTodayList() {
+  const list = document.getElementById('today-list');
+  const title = document.getElementById('today-title');
+  const today = new Date();
+  title.textContent = `📅 今日 ${today.getMonth()+1}/${today.getDate()} (${'日月火水木金土'[today.getDay()]})`;
+
+  const todays = state.schedules
+    .filter(s => s['開始日時'] && s['開始日時'].substring(0,10) === state.todayStr)
+    .sort((a,b) => (a['開始日時'] || '').localeCompare(b['開始日時'] || ''));
+
+  if (todays.length === 0) {
+    list.innerHTML = '<div style="color:#888;font-size:13px;padding:8px">本日の予定はありません</div>';
+    return;
+  }
+
+  list.innerHTML = todays.map(s => {
+    const time = s['開始日時'] ? s['開始日時'].substring(11, 16) : '--:--';
+    const wt = s['作業区分'] || 'その他';
+    const cancelled = s['状態'] === 'キャンセル';
+    const label = [s['車両名'], s['メモ']].filter(Boolean).join(' / ') || wt;
+    return `<div class="list-item workType-${wt}${cancelled ? ' cancelled' : ''}" data-id="${s['予定ID']}">
+      <span class="time">${time}</span>
+      <span>${label}</span>
+    </div>`;
+  }).join('');
+
+  list.querySelectorAll('.list-item').forEach(el => {
+    el.addEventListener('click', () => openEditModal(el.dataset.id));
+  });
+}
+
+// ====== Data loading ======
+async function postToGas(action, body) {
+  if (!GAS_URL) throw new Error('GAS_URL 未設定');
+  const res = await fetch(GAS_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain' },
+    body: JSON.stringify(Object.assign({ action }, body || {}))
+  });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const json = await res.json();
+  if (json.status !== 'ok') throw new Error(json.message || '不明なエラー');
+  return json;
+}
+
+async function loadData() {
+  const token = localStorage.getItem('SCHEDULE_TOKEN') || prompt('初回のみ: SCHEDULE_TOKEN を入力してください');
+  if (!token) return;
+  localStorage.setItem('SCHEDULE_TOKEN', token);
+
+  try {
+    const [sch, veh, sta] = await Promise.all([
+      postToGas('schedule_list', { token, excludeCancelled: false }),
+      postToGas('vehicle_list', { token }),
+      postToGas('staff_list', { token }),
+    ]);
+    state.schedules = sch.rows || [];
+    state.vehicles  = veh.rows || [];
+    state.staffs    = sta.rows || [];
+    renderCalendar();
+    renderTodayList();
+    populateStaffSelect();
+    populateVehicleSelect();
+  } catch (err) {
+    alert('データ取得に失敗: ' + err.message);
+  }
+}
+
+// ====== Init ======
+function init() {
+  const today = new Date();
+  state.todayStr = toDateStr(today);
+  document.getElementById('refresh-btn').addEventListener('click', loadData);
+  loadData();
+}
+
+init();
 </script>
 </body>
 </html>
