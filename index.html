@@ -7,6 +7,10 @@
 <title>車屋予定管理</title>
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
+<!-- iOS Safari スタンドアロン起動用 -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="車屋予定">
 <style>
   *,*::before,*::after { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Yu Gothic', sans-serif; background: #f2f2f7; color: #1a1a1a; -webkit-tap-highlight-color: transparent; overscroll-behavior: none; }
@@ -119,6 +123,13 @@
   .detail-fs-actions .btn-primary { background: #1D9E75; color: #fff; }
   .detail-fs-actions .btn-danger { background: #E8384F; color: #fff; }
 
+  /* ===== ローディングオーバーレイ ===== */
+  .app-loading { position: fixed; inset: 0; background: #f2f2f7; z-index: 400; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; }
+  .app-loading.hidden { display: none; }
+  .app-loading .spinner { width: 40px; height: 40px; border: 3px solid #d4eee5; border-top-color: #1D9E75; border-radius: 50%; animation: spin 0.9s linear infinite; }
+  .app-loading .text { color: #1D9E75; font-size: 14px; font-weight: 600; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
   /* ===== install banner ===== */
   .install-banner { position: fixed; bottom: 80px; left: 16px; right: 16px; background: #fff; padding: 12px; border-radius: 10px; box-shadow: 0 4px 16px rgba(0,0,0,0.2); display: none; z-index: 150; }
   .install-banner.active { display: block; }
@@ -138,6 +149,12 @@
 </style>
 </head>
 <body>
+
+<!-- 起動時オーバーレイ (loadData 完了 or タイムアウトで非表示) -->
+<div class="app-loading" id="app-loading">
+  <div class="spinner"></div>
+  <div class="text">読み込み中...</div>
+</div>
 
 <header>
   <h1>🚗 車屋予定管理</h1>
@@ -630,9 +647,17 @@ async function postToGas(action, body) {
   return json;
 }
 
+function hideAppLoading() {
+  const el = document.getElementById('app-loading');
+  if (el) el.classList.add('hidden');
+}
+
 async function loadData() {
   const token = localStorage.getItem('SCHEDULE_TOKEN') || prompt('初回のみ: SCHEDULE_TOKEN を入力してください');
-  if (!token) return;
+  if (!token) {
+    hideAppLoading();  // prompt キャンセル時もカレンダーを見せる
+    return;
+  }
   localStorage.setItem('SCHEDULE_TOKEN', token);
 
   try {
@@ -650,6 +675,8 @@ async function loadData() {
     populateVehicleSelect();
   } catch (err) {
     alert('データ取得に失敗: ' + err.message);
+  } finally {
+    hideAppLoading();
   }
 }
 
@@ -657,6 +684,14 @@ async function loadData() {
 function init() {
   const today = new Date();
   state.todayStr = toDateStr(today);
+
+  // データ取得を待たずに先にカレンダーを描画 (Bug 2 修正: 月切替を押さなくても表示される)
+  renderCalendar();
+  renderTodayList();
+
+  // セーフティネット: 8 秒で必ずローディングを消す (API 失敗や iOS prompt 抑制で永久に消えない事故防止)
+  setTimeout(hideAppLoading, 8000);
+
   document.getElementById('refresh-btn').addEventListener('click', loadData);
 
   // 日別モーダルのボタン
