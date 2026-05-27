@@ -538,8 +538,9 @@ function handleStaffLookupByLine_(ss, body) {
   const roleCol = STAFF_HEADERS.indexOf('役職');
 
   for (let i = 1; i < data.length; i++) {
-    if (String(data[i][lineIdCol]) === lineId &&
-        data[i][activeCol] !== false && data[i][activeCol] !== 'FALSE') {
+    const flag = data[i][activeCol];
+    const isActive = flag !== false && String(flag).toUpperCase() !== 'FALSE';
+    if (String(data[i][lineIdCol]) === lineId && isActive) {
       const result = {
         isStaff: true,
         id: String(data[i][idCol]),
@@ -568,8 +569,21 @@ function invalidateStaffCache_() {
 
 function test_all() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  PropertiesService.getScriptProperties().setProperty('SCHEDULE_TOKEN', 'test-token');
-  PropertiesService.getScriptProperties().setProperty('ADMIN_PIN', '1203');
+
+  // ⚠️ Safety: do not overwrite production Script Properties
+  const props = PropertiesService.getScriptProperties();
+  const existingToken = props.getProperty('SCHEDULE_TOKEN');
+  const existingPin = props.getProperty('ADMIN_PIN');
+  if (existingToken && existingToken !== 'test-token') {
+    Logger.log('❌ ABORT: SCHEDULE_TOKEN already set to a non-test value. test_all は本番環境では実行不可。');
+    return;
+  }
+  if (existingPin && existingPin !== '1203') {
+    Logger.log('❌ ABORT: ADMIN_PIN already set to a non-test value. test_all は本番環境では実行不可。');
+    return;
+  }
+  if (!existingToken) props.setProperty('SCHEDULE_TOKEN', 'test-token');
+  if (!existingPin) props.setProperty('ADMIN_PIN', '1203');
 
   Logger.log('=== Test 1: meta_init ===');
   Logger.log(handleMetaInit_(ss, { token: 'test-token' }).getContent());
