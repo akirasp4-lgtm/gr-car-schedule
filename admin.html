@@ -199,7 +199,77 @@ function applyScheduleFilter() {
   state.schedules = original;
 }
 function renderVehicles() {
-  document.getElementById('tab-vehicles').innerHTML = '<p>Task 18 で実装</p>';
+  const container = document.getElementById('tab-vehicles');
+  let html = `
+    <div style="margin-bottom:8px"><button class="btn btn-primary btn-small" id="veh-add">＋ 車両を追加</button></div>
+    <table>
+      <thead><tr>
+        <th>ID</th><th>車両名</th><th>ナンバー</th><th>所有</th><th>状態</th><th>仕入額</th><th>売却額</th><th></th>
+      </tr></thead>
+      <tbody>
+  `;
+  state.vehicles.forEach(v => {
+    html += `<tr>
+      <td>${v['車両ID']}</td>
+      <td>${v['車両名']}</td>
+      <td>${v['ナンバー']}</td>
+      <td>${v['所有会社']}</td>
+      <td>${v['状態']}</td>
+      <td>${v['仕入額'] || ''}</td>
+      <td>${v['売却額'] || ''}</td>
+      <td>
+        <button class="btn btn-secondary btn-small" data-edit="${v['車両ID']}">編集</button>
+        <button class="btn btn-danger btn-small" data-del="${v['車両ID']}">削除</button>
+      </td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  container.innerHTML = html;
+
+  document.getElementById('veh-add').addEventListener('click', () => openVehicleForm(null));
+  container.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => openVehicleForm(b.dataset.edit)));
+  container.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => deleteVehicle(b.dataset.del)));
+}
+
+function openVehicleForm(id) {
+  const v = id ? state.vehicles.find(x => x['車両ID'] === id) : {};
+  const name = prompt('車両名:', v['車両名'] || '');
+  if (name === null) return;
+  const plate = prompt('ナンバー:', v['ナンバー'] || '');
+  if (plate === null) return;
+  const ownerCompany = prompt('所有会社:', v['所有会社'] || 'グローライズ');
+  if (ownerCompany === null) return;
+  const purchasePrice = prompt('仕入額（数字のみ、未入力可）:', v['仕入額'] || '');
+  if (purchasePrice === null) return;
+  const sellPrice = prompt('売却額（数字のみ、未入力可）:', v['売却額'] || '');
+  if (sellPrice === null) return;
+
+  const body = {
+    token: state.token, pin: state.pin,
+    name, plate, ownerCompany,
+    purchasePrice: purchasePrice ? Number(purchasePrice) : '',
+    sellPrice: sellPrice ? Number(sellPrice) : '',
+  };
+  const action = id ? 'vehicle_update' : 'vehicle_add';
+  if (id) body.id = id;
+  postToGas(action, body).then(loadAll).catch(err => alert('失敗: ' + err.message));
+}
+
+async function deleteVehicle(id) {
+  if (!confirm('この車両を削除しますか？')) return;
+  try {
+    await postToGas('vehicle_delete', { token: state.token, pin: state.pin, id });
+    await loadAll();
+  } catch (err) {
+    if (err.message.includes('使用中')) {
+      if (confirm(err.message + '\n本当に削除しますか？（force）')) {
+        await postToGas('vehicle_delete', { token: state.token, pin: state.pin, id, force: true });
+        await loadAll();
+      }
+    } else {
+      alert('失敗: ' + err.message);
+    }
+  }
 }
 function renderStaffs() {
   document.getElementById('tab-staffs').innerHTML = '<p>Task 19 で実装</p>';
