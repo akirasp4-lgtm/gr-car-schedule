@@ -272,7 +272,61 @@ async function deleteVehicle(id) {
   }
 }
 function renderStaffs() {
-  document.getElementById('tab-staffs').innerHTML = '<p>Task 19 で実装</p>';
+  const container = document.getElementById('tab-staffs');
+  let html = `
+    <div style="margin-bottom:8px"><button class="btn btn-primary btn-small" id="staff-add">＋ スタッフを追加</button></div>
+    <p style="font-size:11px;color:#888">※ LINE_ID は本人に GRCMS LINE で 1 回メッセージを送ってもらい、操作ログから取得した値を貼り付けてください。</p>
+    <table>
+      <thead><tr>
+        <th>ID</th><th>氏名</th><th>LINE_ID</th><th>役職</th><th>有効</th><th></th>
+      </tr></thead>
+      <tbody>
+  `;
+  state.staffs.forEach(s => {
+    const active = s['有効フラグ'] !== false && String(s['有効フラグ']).toUpperCase() !== 'FALSE';
+    html += `<tr>
+      <td>${s['スタッフID']}</td>
+      <td>${s['氏名']}</td>
+      <td style="font-family:monospace;font-size:11px">${s['LINE_ID'] || ''}</td>
+      <td>${s['役職']}</td>
+      <td>${active ? '✅' : '❌'}</td>
+      <td>
+        <button class="btn btn-secondary btn-small" data-edit="${s['スタッフID']}">編集</button>
+        <button class="btn ${active ? 'btn-danger' : 'btn-primary'} btn-small" data-toggle="${s['スタッフID']}">${active ? '無効化' : '有効化'}</button>
+      </td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  container.innerHTML = html;
+
+  document.getElementById('staff-add').addEventListener('click', () => openStaffForm(null));
+  container.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => openStaffForm(b.dataset.edit)));
+  container.querySelectorAll('[data-toggle]').forEach(b => b.addEventListener('click', () => toggleStaff(b.dataset.toggle)));
+}
+
+function openStaffForm(id) {
+  const s = id ? state.staffs.find(x => x['スタッフID'] === id) : {};
+  const name = prompt('氏名:', s['氏名'] || '');
+  if (name === null) return;
+  const lineId = prompt('LINE_ID (U... 形式、不明なら空):', s['LINE_ID'] || '');
+  if (lineId === null) return;
+  const role = prompt('役職:', s['役職'] || 'スタッフ');
+  if (role === null) return;
+  const contact = prompt('連絡先 TEL:', s['連絡先'] || '');
+  if (contact === null) return;
+
+  const body = { token: state.token, pin: state.pin, name, lineId, role, contact };
+  const action = id ? 'staff_update' : 'staff_add';
+  if (id) body.id = id;
+  postToGas(action, body).then(loadAll).catch(err => alert('失敗: ' + err.message));
+}
+
+async function toggleStaff(id) {
+  const s = state.staffs.find(x => x['スタッフID'] === id);
+  if (!s) return;
+  const newActive = s['有効フラグ'] === false || String(s['有効フラグ']).toUpperCase() === 'FALSE';
+  await postToGas('staff_update', { token: state.token, pin: state.pin, id, active: newActive });
+  await loadAll();
 }
 </script>
 </body>
