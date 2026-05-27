@@ -491,6 +491,117 @@ function populateStaffSelect() {
       .map(s => `<option value="${s['LINE_ID'] || s['氏名']}">${s['氏名']}</option>`)
       .join('');
 }
+
+// ====== Vehicle dropdown (最近使った順) ======
+function populateVehicleSelect() {
+  const sel = document.getElementById('form-vehicle');
+  const lastUsed = {};
+  state.schedules.forEach(s => {
+    const vid = s['車両ID'];
+    if (!vid) return;
+    if (!lastUsed[vid] || (s['開始日時'] || '') > lastUsed[vid]) {
+      lastUsed[vid] = s['開始日時'] || '';
+    }
+  });
+  const sorted = state.vehicles
+    .filter(v => v['状態'] !== '売却済' && v['状態'] !== '廃車')
+    .sort((a, b) => {
+      const d = (lastUsed[b['車両ID']] || '').localeCompare(lastUsed[a['車両ID']] || '');
+      if (d !== 0) return d;
+      return (a['車両名'] || '').localeCompare(b['車両名'] || '');
+    });
+  sel.innerHTML = '<option value="">（選択してください）</option>' +
+    sorted.map(v => {
+      const recent = lastUsed[v['車両ID']] ? ' ★' : '';
+      return `<option value="${v['車両ID']}" data-name="${v['車両名']}" data-plate="${v['ナンバー']}">${v['車両名']}${recent}</option>`;
+    }).join('');
+}
+
+// ====== Conflict detection ======
+function detectVehicleConflicts(vehicleId, dateStr, timeStart, excludeId) {
+  if (!vehicleId) return [];
+  return state.schedules.filter(s =>
+    s['車両ID'] === vehicleId &&
+    s['予定ID'] !== excludeId &&
+    s['状態'] !== 'キャンセル' &&
+    s['開始日時'] && s['開始日時'].substring(0,10) === dateStr
+  );
+}
+
+// ====== Submit ======
+async function submitSchedule() {
+  const wt = document.getElementById('form-worktype').value;
+  if (!wt) { alert('作業区分を選択してください'); return; }
+
+  const date = document.getElementById('form-date').value;
+  const time = document.getElementById('form-time-start').value;
+  if (!date || !time) { alert('日付と時刻を入力してください'); return; }
+
+  const vehicleSel = document.getElementById('form-vehicle');
+  const vehicleId = vehicleSel.value;
+  const vehicleName = vehicleSel.selectedOptions[0]?.dataset.name || '';
+  const vehiclePlate = vehicleSel.selectedOptions[0]?.dataset.plate || '';
+
+  const conflicts = detectVehicleConflicts(vehicleId, date, time, state.selectedScheduleId);
+  if (conflicts.length > 0) {
+    const lines = conflicts.map(c => `・${c['開始日時']?.substring(11,16) || ''} ${c['担当スタッフ'] || ''}`).join('\n');
+    if (!confirm(`同日に同じ車両で他の予定があります:\n${lines}\nそれでも登録しますか？`)) return;
+  }
+
+  const staffSel = document.getElementById('form-staff');
+  const staffName = staffSel.selectedOptions[0]?.textContent || '';
+  const staffLineId = staffSel.value;
+
+  const token = localStorage.getItem('SCHEDULE_TOKEN');
+  const body = {
+    token,
+    time_start: `${date}T${time}:00+09:00`,
+    staffName, staffLineId,
+    workType: wt,
+    vehicleId, vehicleName, vehiclePlate,
+    place: document.getElementById('form-place').value,
+    memo: document.getElementById('form-memo').value,
+    status: document.getElementById('form-status').value,
+    source: 'Web',
+    updatedBy: staffName || 'Web'
+  };
+
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true;
+  btn.textContent = '保存中...';
+  try {
+    if (state.selectedScheduleId) {
+      await postToGas('schedule_update', Object.assign({ id: state.selectedScheduleId }, body));
+    } else {
+      await postToGas('schedule_add', body);
+    }
+    closeModal();
+    await loadData();
+  } catch (err) {
+    alert('保存に失敗: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '保存';
+  }
+}
+
+// ====== Delete ======
+async function deleteSchedule() {
+  if (!state.selectedScheduleId) return;
+  if (!confirm('この予定をキャンセル状態にします。よろしいですか？')) return;
+
+  const token = localStorage.getItem('SCHEDULE_TOKEN');
+  try {
+    await postToGas('schedule_delete', { token, id: state.selectedScheduleId, updatedBy: 'Web' });
+    closeModal();
+    await loadData();
+  } catch (err) {
+    alert('削除に失敗: ' + err.message);
+  }
+}
+
+document.getElementById('submit-btn').addEventListener('click', submitSchedule);
+document.getElementById('delete-btn').addEventListener('click', deleteSchedule);
 </script>
 </body>
 </html>
