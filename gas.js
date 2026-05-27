@@ -190,3 +190,27 @@ function applyPartialUpdate_(sheet, rowNum, headers, currentRow, partial, fieldM
   sheet.getRange(rowNum, 1, 1, headers.length).setValues([updates]);
   return updates;
 }
+
+// ====== Action: meta_init ======
+function handleMetaInit_(ss, body) {
+  checkToken_(body);
+  const created = [];
+  if (!ss.getSheetByName(SCHEDULE_SHEET)) created.push(SCHEDULE_SHEET);
+  if (!ss.getSheetByName(VEHICLE_SHEET)) created.push(VEHICLE_SHEET);
+  if (!ss.getSheetByName(STAFF_SHEET)) created.push(STAFF_SHEET);
+  if (!ss.getSheetByName(OPLOG_SHEET)) created.push(OPLOG_SHEET);
+
+  getOrCreateScheduleSheet_(ss);
+  getOrCreateVehicleSheet_(ss);
+  getOrCreateStaffSheet_(ss);
+  getOrCreateOpLogSheet_(ss);
+
+  // デフォルトシート Sheet1 が残っていれば削除（4 つ作成済みなら）
+  const sheet1 = ss.getSheetByName('Sheet1') || ss.getSheetByName('シート1');
+  if (sheet1 && ss.getSheets().length > 4) {
+    try { ss.deleteSheet(sheet1); } catch (_) {}
+  }
+
+  logOperation_(ss, 'meta_init', '', 'system', 'admin', { created });
+  return ok({ sheets_created: created });
+}
