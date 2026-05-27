@@ -43,6 +43,10 @@ function doPost(e) {
     if (action === 'schedule_update') return handleScheduleUpdate_(ss, body);
     if (action === 'schedule_delete') return handleScheduleDelete_(ss, body);
     if (action === 'schedule_list')   return handleScheduleList_(ss, body);
+    if (action === 'vehicle_add')     return handleVehicleAdd_(ss, body);
+    if (action === 'vehicle_update')  return handleVehicleUpdate_(ss, body);
+    if (action === 'vehicle_delete')  return handleVehicleDelete_(ss, body);
+    if (action === 'vehicle_list')    return handleVehicleList_(ss, body);
     if (action === 'meta_init')       return handleMetaInit_(ss, body);
 
     return error('未知のアクション: ' + action);
@@ -333,4 +337,116 @@ function handleScheduleList_(ss, body) {
   if (body.excludeCancelled) rows = rows.filter(r => r['状態'] !== 'キャンセル');
 
   return ok({ rows, count: rows.length });
+}
+
+// ====== Action: vehicle_add ======
+function handleVehicleAdd_(ss, body) {
+  checkToken_(body);
+  checkPin_(body);
+  const ev = body.event || body;
+  const id = generateVehicleId_(ss);
+  const now = new Date();
+  const sheet = getOrCreateVehicleSheet_(ss);
+
+  const row = VEHICLE_HEADERS.map(h => {
+    switch (h) {
+      case '車両ID': return id;
+      case '車両名': return String(ev.name || '');
+      case 'ナンバー': return String(ev.plate || '');
+      case '所有会社': return String(ev.ownerCompany || '');
+      case '状態': return String(ev.status || '稼働中');
+      case '仕入日': return String(ev.purchaseDate || '');
+      case '仕入額': return Number(ev.purchasePrice) || '';
+      case '売却日': return String(ev.sellDate || '');
+      case '売却額': return Number(ev.sellPrice) || '';
+      case 'メモ': return String(ev.memo || '');
+      case '登録日時': return now;
+      case '更新日時': return now;
+      default: return '';
+    }
+  });
+
+  sheet.appendRow(row);
+  logOperation_(ss, 'vehicle_add', id, body.updatedBy || 'admin', 'admin', ev);
+  return ok({ id });
+}
+
+// ====== Action: vehicle_update ======
+function handleVehicleUpdate_(ss, body) {
+  checkToken_(body);
+  checkPin_(body);
+  const ev = body.event || body;
+  const id = String(ev.id || '');
+  if (!id) return error('id が指定されていません');
+
+  const sheet = getOrCreateVehicleSheet_(ss);
+  const found = findRowById_(sheet, VEHICLE_HEADERS.indexOf('車両ID'), id);
+  if (!found) return error('対象が見つかりません: ' + id);
+
+  const fieldMap = {
+    name: '車両名', plate: 'ナンバー', ownerCompany: '所有会社', status: '状態',
+    purchaseDate: '仕入日', purchasePrice: '仕入額',
+    sellDate: '売却日', sellPrice: '売却額',
+    memo: 'メモ'
+  };
+  applyPartialUpdate_(sheet, found.row, VEHICLE_HEADERS, found.data, ev, fieldMap);
+  logOperation_(ss, 'vehicle_update', id, body.updatedBy || 'admin', 'admin', ev);
+  return ok({ updated: id });
+}
+
+// ====== Action: vehicle_delete (force 二段確認) ======
+function handleVehicleDelete_(ss, body) {
+  checkToken_(body);
+  checkPin_(body);
+  const id = String(body.id || '');
+  if (!id) return error('id が指定されていません');
+
+  // 予定で使用中かチェック
+  const scheduleSheet = getOrCreateScheduleSheet_(ss);
+  const scheduleData = scheduleSheet.getDataRange().getValues();
+  const vehicleIdCol = SCHEDULE_HEADERS.indexOf('車両ID');
+  const statusCol = SCHEDULE_HEADERS.indexOf('状態');
+  let usageCount = 0;
+  for (let i = 1; i < scheduleData.length; i++) {
+    if (String(scheduleData[i][vehicleIdCol]) === id &&
+        scheduleData[i][statusCol] !== 'キャンセル') {
+      usageCount++;
+    }
+  }
+
+  if (usageCount > 0 && !body.force) {
+    return error('予定 ' + usageCount + ' 件で使用中です。force:true で強制削除できます');
+  }
+
+  // 物理削除
+  const sheet = getOrCreateVehicleSheet_(ss);
+  const found = findRowById_(sheet, VEHICLE_HEADERS.indexOf('車両ID'), id);
+  if (!found) return error('対象が見つかりません: ' + id);
+  sheet.deleteRow(found.row);
+
+  logOperation_(ss, 'vehicle_delete', id, body.updatedBy || 'admin', 'admin', { force: !!body.force, usageCount });
+  return ok({ deleted: id, hadUsage: usageCount });
+}
+
+// ====== Action: vehicle_list ======
+function handleVehicleList_(ss, body) {
+  checkToken_(body);
+  const sheet = getOrCreateVehicleSheet_(ss);
+  const tz = Session.getScriptTimeZone();
+  const data = sheet.getDataRange().getValues();
+  if (data.length < 2) return ok({ rows: [] });
+  const headers = data[0];
+  const rows = data.slice(1).map(r => {
+    const obj = {};
+    headers.forEach((h, j) => {
+      const v = r[j];
+      if (v instanceof Date) {
+        obj[h] = Utilities.formatDate(v, tz, "yyyy-MM-dd'T'HH:mm:ssXXX");
+      } else {
+        obj[h] = (v === undefined || v === null) ? '' : String(v);
+      }
+    });
+    return obj;
+  });
+  return ok({ rows });
 }
