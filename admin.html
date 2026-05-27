@@ -122,9 +122,18 @@ async function postToGas(action, body) {
     headers: { 'Content-Type': 'text/plain' },
     body: JSON.stringify(Object.assign({ action }, body || {}))
   });
-  if (!res.ok) throw new Error('HTTP ' + res.status);
-  const json = await res.json();
-  if (json.status !== 'ok') throw new Error(json.message);
+  if (!res.ok) {
+    let detail = '';
+    try { detail = (await res.text()).substring(0, 200); } catch (_) {}
+    throw new Error('HTTP ' + res.status + (detail ? ': ' + detail : ''));
+  }
+  let json;
+  try {
+    json = await res.json();
+  } catch (parseErr) {
+    throw new Error('応答形式が不正です (JSON parse 失敗): ' + parseErr.message);
+  }
+  if (json.status !== 'ok') throw new Error(json.message || '不明なエラー');
   return json;
 }
 
@@ -142,9 +151,11 @@ async function loadAll() {
   renderStaffs();
 }
 
-function renderSchedules() {
+function renderSchedules(filtered) {
   const container = document.getElementById('tab-schedules');
-  const rows = state.schedules
+  // filtered が渡されればそれを使用、なければ state.schedules のコピーを使う (破壊しない)
+  const source = Array.isArray(filtered) ? filtered : state.schedules;
+  const rows = source.slice()
     .sort((a,b) => (b['開始日時'] || '').localeCompare(a['開始日時'] || ''));
 
   let html = `
@@ -193,10 +204,8 @@ function applyScheduleFilter() {
     if (to && d > to) return false;
     return true;
   });
-  const original = state.schedules;
-  state.schedules = filtered;
-  renderSchedules();
-  state.schedules = original;
+  // state を破壊せず引数で渡す
+  renderSchedules(filtered);
 }
 function renderVehicles() {
   const container = document.getElementById('tab-vehicles');

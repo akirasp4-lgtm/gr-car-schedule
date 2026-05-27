@@ -157,6 +157,56 @@ function logOperation_(ss, action, target, operator, source, diff) {
   }
 }
 
+// ====== 共通ヘルパ ======
+
+/**
+ * シート/JSON から来る「有効フラグ」のような値を boolean に正規化する。
+ * true / 'TRUE' / 'true' / 1 / '1' → true
+ * それ以外 (false / 'FALSE' / 'false' / 0 / '' / null / undefined) → false
+ */
+function normalizeBool_(v) {
+  if (v === true || v === 1) return true;
+  if (v === false || v === 0 || v === null || v === undefined) return false;
+  const s = String(v).trim().toUpperCase();
+  return s === 'TRUE' || s === '1' || s === 'YES';
+}
+
+/**
+ * 「状態」が「キャンセル」かどうか判定する (trim + 大文字小文字を許容)。
+ * スペース混入や全角差異への耐性を持たせる。
+ */
+function isCancelledStatus_(v) {
+  if (v === null || v === undefined) return false;
+  return String(v).trim() === 'キャンセル';
+}
+
+/**
+ * 日時値を ISO 8601 (yyyy-MM-dd'T'HH:mm:ssXXX) 文字列に正規化する。
+ * Date オブジェクトでも文字列でも受け取れる。パース不可なら空文字を返す。
+ */
+function normalizeDateTime_(v) {
+  if (!v) return '';
+  let d;
+  if (v instanceof Date) {
+    d = v;
+  } else {
+    const s = String(v).trim();
+    if (!s) return '';
+    // YYYY-MM-DD のみなら 00:00:00+09:00 を付ける
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+      d = new Date(s + 'T00:00:00+09:00');
+    } else {
+      d = new Date(s);
+    }
+  }
+  if (!d || isNaN(d.getTime())) {
+    // パース不可。元の値を String 化して返す（後方互換）
+    return String(v);
+  }
+  const tz = Session.getScriptTimeZone();
+  return Utilities.formatDate(d, tz, "yyyy-MM-dd'T'HH:mm:ssXXX");
+}
+
 // ====== ID 生成 ======
 function generateScheduleId_() {
   const tz = Session.getScriptTimeZone();
@@ -236,8 +286,8 @@ function handleScheduleAdd_(ss, body) {
   const row = SCHEDULE_HEADERS.map(h => {
     switch (h) {
       case '予定ID': return id;
-      case '開始日時': return String(ev.time_start || ev.start_dt || '');
-      case '終了予定日時': return String(ev.time_end || ev.end_dt || '');
+      case '開始日時': return normalizeDateTime_(ev.time_start || ev.start_dt || '');
+      case '終了予定日時': return normalizeDateTime_(ev.time_end || ev.end_dt || '');
       case '担当スタッフ': return String(ev.staffName || '');
       case '担当LINE_ID': return String(ev.staffLineId || '');
       case '作業区分': return String(ev.workType || 'その他');
@@ -413,7 +463,7 @@ function handleVehicleDelete_(ss, body) {
   let usageCount = 0;
   for (let i = 1; i < scheduleData.length; i++) {
     if (String(scheduleData[i][vehicleIdCol]) === id &&
-        scheduleData[i][statusCol] !== 'キャンセル') {
+        !isCancelledStatus_(scheduleData[i][statusCol])) {
       usageCount++;
     }
   }
@@ -525,8 +575,11 @@ function handleStaffLookupByLine_(ss, body) {
   const lineId = String(body.lineId || '');
   if (!lineId) return ok({ isStaff: false });
 
+  // 世代カウンタを含めたキャッシュキー (invalidateStaffCache_ が世代を上げると古いキャッシュは無効)
+  const gen = _getStaffCacheGeneration_();
+  const cacheKey = 'staff_v' + gen + '_' + lineId;
   const cache = CacheService.getScriptCache();
-  const cached = cache.get('staff_' + lineId);
+  const cached = cache.get(cacheKey);
   if (cached) return ok(JSON.parse(cached));
 
   const sheet = getOrCreateStaffSheet_(ss);
@@ -538,29 +591,43 @@ function handleStaffLookupByLine_(ss, body) {
   const roleCol = STAFF_HEADERS.indexOf('役職');
 
   for (let i = 1; i < data.length; i++) {
-    const flag = data[i][activeCol];
-    const isActive = flag !== false && String(flag).toUpperCase() !== 'FALSE';
-    if (String(data[i][lineIdCol]) === lineId && isActive) {
+    if (String(data[i][lineIdCol]) === lineId && normalizeBool_(data[i][activeCol])) {
       const result = {
         isStaff: true,
         id: String(data[i][idCol]),
         name: String(data[i][nameCol]),
         role: String(data[i][roleCol])
       };
-      cache.put('staff_' + lineId, JSON.stringify(result), 300);
+      cache.put(cacheKey, JSON.stringify(result), 300);
       return ok(result);
     }
   }
 
   const negative = { isStaff: false };
-  cache.put('staff_' + lineId, JSON.stringify(negative), 300);
+  cache.put(cacheKey, JSON.stringify(negative), 300);
   return ok(negative);
 }
 
-// ====== キャッシュ全消し（スタッフマスタ更新時） ======
+// ====== スタッフキャッシュ世代カウンタ ======
+function _getStaffCacheGeneration_() {
+  const props = PropertiesService.getScriptProperties();
+  const v = props.getProperty('STAFF_CACHE_GEN');
+  return v ? Number(v) : 1;
+}
+
+/**
+ * スタッフマスタが更新された時に世代カウンタを +1 する。
+ * これにより既存の全 staff_v{N}_* キャッシュが事実上無効化される
+ * (古いキーは TTL 5min で自然消滅)。
+ */
 function invalidateStaffCache_() {
-  // CacheService は個別キーの一括削除ができないので、ScriptProperty で世代カウンタを上げる方式は次の Phase で
-  // Phase 1 では何もしない（5 分待てば反映される）
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const cur = Number(props.getProperty('STAFF_CACHE_GEN') || '1');
+    props.setProperty('STAFF_CACHE_GEN', String(cur + 1));
+  } catch (err) {
+    Logger.log('invalidateStaffCache_ failed: ' + err);
+  }
 }
 
 // ============================================================
