@@ -561,3 +561,59 @@ function invalidateStaffCache_() {
   // CacheService は個別キーの一括削除ができないので、ScriptProperty で世代カウンタを上げる方式は次の Phase で
   // Phase 1 では何もしない（5 分待てば反映される）
 }
+
+// ============================================================
+// 手動テスト用関数（GAS エディタから実行）
+// ============================================================
+
+function test_all() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  PropertiesService.getScriptProperties().setProperty('SCHEDULE_TOKEN', 'test-token');
+  PropertiesService.getScriptProperties().setProperty('ADMIN_PIN', '1203');
+
+  Logger.log('=== Test 1: meta_init ===');
+  Logger.log(handleMetaInit_(ss, { token: 'test-token' }).getContent());
+
+  Logger.log('=== Test 2: vehicle_add ===');
+  const v = JSON.parse(handleVehicleAdd_(ss, {
+    token: 'test-token', pin: '1203',
+    name: 'テスト車両', plate: 'なにわ123あ4567', ownerCompany: 'GRHD'
+  }).getContent());
+  Logger.log(v);
+
+  Logger.log('=== Test 3: staff_add ===');
+  const s = JSON.parse(handleStaffAdd_(ss, {
+    token: 'test-token', pin: '1203',
+    name: 'テスト スタッフ', lineId: 'U_TEST_USER_001', role: 'スタッフ'
+  }).getContent());
+  Logger.log(s);
+
+  Logger.log('=== Test 4: staff_lookup_by_line ===');
+  Logger.log(handleStaffLookupByLine_(ss, { token: 'test-token', lineId: 'U_TEST_USER_001' }).getContent());
+
+  Logger.log('=== Test 5: schedule_add ===');
+  const sc = JSON.parse(handleScheduleAdd_(ss, {
+    token: 'test-token',
+    time_start: new Date().toISOString(),
+    staffName: 'テスト スタッフ',
+    staffLineId: 'U_TEST_USER_001',
+    workType: '整備修理',
+    vehicleId: v.id,
+    vehicleName: 'テスト車両',
+    vehiclePlate: 'なにわ123あ4567',
+    memo: 'テスト予定',
+    source: 'test'
+  }).getContent());
+  Logger.log(sc);
+
+  Logger.log('=== Test 6: schedule_list ===');
+  Logger.log(handleScheduleList_(ss, { token: 'test-token' }).getContent());
+
+  Logger.log('=== Test 7: vehicle_delete (拒否) ===');
+  Logger.log(handleVehicleDelete_(ss, { token: 'test-token', pin: '1203', id: v.id }).getContent());
+
+  Logger.log('=== Test 8: vehicle_delete (force) ===');
+  Logger.log(handleVehicleDelete_(ss, { token: 'test-token', pin: '1203', id: v.id, force: true }).getContent());
+
+  Logger.log('=== All tests done. シートに残ったテストデータは手動で削除してください。 ===');
+}
