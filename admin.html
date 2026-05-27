@@ -143,7 +143,60 @@ async function loadAll() {
 }
 
 function renderSchedules() {
-  document.getElementById('tab-schedules').innerHTML = '<p>Task 17 で実装</p>';
+  const container = document.getElementById('tab-schedules');
+  const rows = state.schedules
+    .sort((a,b) => (b['開始日時'] || '').localeCompare(a['開始日時'] || ''));
+
+  let html = `
+    <div style="margin-bottom:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <label style="font-size:13px">日付絞り込み:</label>
+      <input type="date" id="sch-from" style="padding:4px;font-size:13px">〜
+      <input type="date" id="sch-to" style="padding:4px;font-size:13px">
+      <button class="btn btn-secondary btn-small" id="sch-filter">適用</button>
+      <button class="btn btn-secondary btn-small" id="sch-clear">クリア</button>
+    </div>
+    <div style="font-size:12px;color:#666">${rows.length} 件</div>
+    <table>
+      <thead><tr>
+        <th>ID</th><th>日時</th><th>担当</th><th>区分</th><th>車両</th><th>場所</th><th>状態</th>
+      </tr></thead>
+      <tbody>
+  `;
+  rows.forEach(s => {
+    html += `<tr>
+      <td>${s['予定ID'] || ''}</td>
+      <td>${(s['開始日時'] || '').replace('T',' ').substring(0,16)}</td>
+      <td>${s['担当スタッフ'] || ''}</td>
+      <td>${s['作業区分'] || ''}</td>
+      <td>${s['車両名'] || ''}</td>
+      <td>${s['場所・行先'] || ''}</td>
+      <td>${s['状態'] || ''}</td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  container.innerHTML = html;
+
+  document.getElementById('sch-filter').addEventListener('click', applyScheduleFilter);
+  document.getElementById('sch-clear').addEventListener('click', () => {
+    document.getElementById('sch-from').value = '';
+    document.getElementById('sch-to').value = '';
+    renderSchedules();
+  });
+}
+
+function applyScheduleFilter() {
+  const from = document.getElementById('sch-from').value;
+  const to = document.getElementById('sch-to').value;
+  const filtered = state.schedules.filter(s => {
+    const d = (s['開始日時'] || '').substring(0,10);
+    if (from && d < from) return false;
+    if (to && d > to) return false;
+    return true;
+  });
+  const original = state.schedules;
+  state.schedules = filtered;
+  renderSchedules();
+  state.schedules = original;
 }
 function renderVehicles() {
   document.getElementById('tab-vehicles').innerHTML = '<p>Task 18 で実装</p>';
