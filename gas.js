@@ -47,6 +47,10 @@ function doPost(e) {
     if (action === 'vehicle_update')  return handleVehicleUpdate_(ss, body);
     if (action === 'vehicle_delete')  return handleVehicleDelete_(ss, body);
     if (action === 'vehicle_list')    return handleVehicleList_(ss, body);
+    if (action === 'staff_add')           return handleStaffAdd_(ss, body);
+    if (action === 'staff_update')        return handleStaffUpdate_(ss, body);
+    if (action === 'staff_list')          return handleStaffList_(ss, body);
+    if (action === 'staff_lookup_by_line') return handleStaffLookupByLine_(ss, body);
     if (action === 'meta_init')       return handleMetaInit_(ss, body);
 
     return error('未知のアクション: ' + action);
@@ -449,4 +453,111 @@ function handleVehicleList_(ss, body) {
     return obj;
   });
   return ok({ rows });
+}
+
+// ====== Action: staff_add ======
+function handleStaffAdd_(ss, body) {
+  checkToken_(body);
+  checkPin_(body);
+  const ev = body.event || body;
+  const id = generateStaffId_(ss);
+  const now = new Date();
+  const sheet = getOrCreateStaffSheet_(ss);
+
+  const row = STAFF_HEADERS.map(h => {
+    switch (h) {
+      case 'スタッフID': return id;
+      case '氏名': return String(ev.name || '');
+      case 'LINE_ID': return String(ev.lineId || '');
+      case '役職': return String(ev.role || 'スタッフ');
+      case '連絡先': return String(ev.contact || '');
+      case '有効フラグ': return ev.active !== false;
+      case '登録日時': return now;
+      default: return '';
+    }
+  });
+
+  sheet.appendRow(row);
+  invalidateStaffCache_();
+  logOperation_(ss, 'staff_add', id, body.updatedBy || 'admin', 'admin', ev);
+  return ok({ id });
+}
+
+// ====== Action: staff_update ======
+function handleStaffUpdate_(ss, body) {
+  checkToken_(body);
+  checkPin_(body);
+  const ev = body.event || body;
+  const id = String(ev.id || '');
+  if (!id) return error('id が指定されていません');
+
+  const sheet = getOrCreateStaffSheet_(ss);
+  const found = findRowById_(sheet, STAFF_HEADERS.indexOf('スタッフID'), id);
+  if (!found) return error('対象が見つかりません: ' + id);
+
+  const fieldMap = {
+    name: '氏名', lineId: 'LINE_ID', role: '役職', contact: '連絡先', active: '有効フラグ'
+  };
+  applyPartialUpdate_(sheet, found.row, STAFF_HEADERS, found.data, ev, fieldMap);
+  invalidateStaffCache_();
+  logOperation_(ss, 'staff_update', id, body.updatedBy || 'admin', 'admin', ev);
+  return ok({ updated: id });
+}
+
+// ====== Action: staff_list ======
+function handleStaffList_(ss, body) {
+  checkToken_(body);
+  const sheet = getOrCreateStaffSheet_(ss);
+  const data = sheet.getDataRange().getValues();
+  if (data.length < 2) return ok({ rows: [] });
+  const headers = data[0];
+  const rows = data.slice(1).map(r => {
+    const obj = {};
+    headers.forEach((h, j) => { obj[h] = (r[j] === null || r[j] === undefined) ? '' : (r[j] instanceof Date ? r[j].toISOString() : r[j]); });
+    return obj;
+  });
+  return ok({ rows });
+}
+
+// ====== Action: staff_lookup_by_line (5分キャッシュ) ======
+function handleStaffLookupByLine_(ss, body) {
+  checkToken_(body);
+  const lineId = String(body.lineId || '');
+  if (!lineId) return ok({ isStaff: false });
+
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get('staff_' + lineId);
+  if (cached) return ok(JSON.parse(cached));
+
+  const sheet = getOrCreateStaffSheet_(ss);
+  const data = sheet.getDataRange().getValues();
+  const lineIdCol = STAFF_HEADERS.indexOf('LINE_ID');
+  const activeCol = STAFF_HEADERS.indexOf('有効フラグ');
+  const idCol = STAFF_HEADERS.indexOf('スタッフID');
+  const nameCol = STAFF_HEADERS.indexOf('氏名');
+  const roleCol = STAFF_HEADERS.indexOf('役職');
+
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][lineIdCol]) === lineId &&
+        data[i][activeCol] !== false && data[i][activeCol] !== 'FALSE') {
+      const result = {
+        isStaff: true,
+        id: String(data[i][idCol]),
+        name: String(data[i][nameCol]),
+        role: String(data[i][roleCol])
+      };
+      cache.put('staff_' + lineId, JSON.stringify(result), 300);
+      return ok(result);
+    }
+  }
+
+  const negative = { isStaff: false };
+  cache.put('staff_' + lineId, JSON.stringify(negative), 300);
+  return ok(negative);
+}
+
+// ====== キャッシュ全消し（スタッフマスタ更新時） ======
+function invalidateStaffCache_() {
+  // CacheService は個別キーの一括削除ができないので、ScriptProperty で世代カウンタを上げる方式は次の Phase で
+  // Phase 1 では何もしない（5 分待てば反映される）
 }
