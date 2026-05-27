@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1D9E75">
+<title>車屋予定管理 - 管理画面</title>
+<link rel="manifest" href="manifest.json">
+<style>
+  *,*::before,*::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', sans-serif; background: #f2f2f7; }
+  header { background: #1D9E75; color: #fff; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; }
+  header h1 { margin: 0; font-size: 17px; }
+  header a { color: #fff; text-decoration: none; font-size: 13px; }
+
+  /* PIN gate */
+  .pin-gate { display: flex; flex-direction: column; align-items: center; padding: 80px 16px; }
+  .pin-gate h2 { color: #1D9E75; }
+  .pin-gate input { font-size: 24px; padding: 16px; width: 200px; text-align: center; letter-spacing: 8px; border: 2px solid #1D9E75; border-radius: 12px; }
+  .pin-gate button { background: #1D9E75; color: #fff; padding: 12px 32px; border: none; border-radius: 10px; font-size: 16px; margin-top: 16px; cursor: pointer; }
+  .pin-gate .err { color: #E8384F; margin-top: 8px; }
+
+  /* Tabs */
+  .tabs { display: flex; background: #fff; border-bottom: 1px solid #e5e5e5; }
+  .tab { flex: 1; padding: 12px; text-align: center; cursor: pointer; font-weight: 600; color: #888; border-bottom: 3px solid transparent; }
+  .tab.active { color: #1D9E75; border-bottom-color: #1D9E75; }
+
+  .tab-content { display: none; padding: 16px; }
+  .tab-content.active { display: block; }
+
+  table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-top: 8px; }
+  th, td { padding: 10px 8px; text-align: left; font-size: 13px; border-bottom: 1px solid #f0f0f0; }
+  th { background: #1D9E75; color: #fff; font-size: 12px; }
+  tr:hover { background: #f9f9f9; }
+
+  .btn { padding: 8px 16px; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; }
+  .btn-primary { background: #1D9E75; color: #fff; }
+  .btn-secondary { background: #e5e5e5; color: #333; }
+  .btn-danger { background: #E8384F; color: #fff; }
+  .btn-small { padding: 4px 10px; font-size: 12px; }
+</style>
+</head>
+<body>
+
+<div id="pin-gate" class="pin-gate">
+  <h2>🔒 管理画面</h2>
+  <p style="color:#666;font-size:13px">PIN を入力してください</p>
+  <input type="password" id="pin-input" inputmode="numeric" autocomplete="off" placeholder="****">
+  <button id="pin-submit">ロック解除</button>
+  <div class="err" id="pin-err" style="display:none">PIN が正しくありません</div>
+</div>
+
+<div id="admin-app" style="display:none">
+  <header>
+    <h1>⚙️ 管理画面</h1>
+    <a href="index.html">← スタッフ画面へ</a>
+  </header>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="schedules">予定一覧</div>
+    <div class="tab" data-tab="vehicles">車両マスタ</div>
+    <div class="tab" data-tab="staffs">スタッフ</div>
+  </div>
+
+  <div id="tab-schedules" class="tab-content active">
+    <p>読み込み中...</p>
+  </div>
+
+  <div id="tab-vehicles" class="tab-content">
+    <p>読み込み中...</p>
+  </div>
+
+  <div id="tab-staffs" class="tab-content">
+    <p>読み込み中...</p>
+  </div>
+</div>
+
+<script>
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbxQqIYdEQr4M4sVxEGCTP2_hbJtKcsXwBviQ16LtuoYNMPM-cU_mCXjP0hR69vUqzrB/exec';
+
+const state = { schedules: [], vehicles: [], staffs: [], pin: '', token: '' };
+
+// ====== PIN gate ======
+document.getElementById('pin-submit').addEventListener('click', tryPin);
+document.getElementById('pin-input').addEventListener('keypress', e => { if (e.key === 'Enter') tryPin(); });
+
+async function tryPin() {
+  const pin = document.getElementById('pin-input').value;
+  const token = localStorage.getItem('SCHEDULE_TOKEN') || prompt('SCHEDULE_TOKEN を入力');
+  if (!token) return;
+  localStorage.setItem('SCHEDULE_TOKEN', token);
+
+  state.pin = pin;
+  state.token = token;
+
+  try {
+    const res = await postToGas('staff_list', { token });
+    if (!res.rows) throw new Error('データ取得失敗');
+    document.getElementById('pin-gate').style.display = 'none';
+    document.getElementById('admin-app').style.display = 'block';
+    loadAll();
+  } catch (err) {
+    document.getElementById('pin-err').textContent = 'エラー: ' + err.message;
+    document.getElementById('pin-err').style.display = 'block';
+  }
+}
+
+// ====== Tabs ======
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    document.getElementById('tab-' + t.dataset.tab).classList.add('active');
+  });
+});
+
+// ====== Data ======
+async function postToGas(action, body) {
+  const res = await fetch(GAS_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain' },
+    body: JSON.stringify(Object.assign({ action }, body || {}))
+  });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const json = await res.json();
+  if (json.status !== 'ok') throw new Error(json.message);
+  return json;
+}
+
+async function loadAll() {
+  const [sch, veh, sta] = await Promise.all([
+    postToGas('schedule_list', { token: state.token }),
+    postToGas('vehicle_list', { token: state.token }),
+    postToGas('staff_list', { token: state.token }),
+  ]);
+  state.schedules = sch.rows || [];
+  state.vehicles  = veh.rows || [];
+  state.staffs    = sta.rows || [];
+  renderSchedules();
+  renderVehicles();
+  renderStaffs();
+}
+
+function renderSchedules() {
+  document.getElementById('tab-schedules').innerHTML = '<p>Task 17 で実装</p>';
+}
+function renderVehicles() {
+  document.getElementById('tab-vehicles').innerHTML = '<p>Task 18 で実装</p>';
+}
+function renderStaffs() {
+  document.getElementById('tab-staffs').innerHTML = '<p>Task 19 で実装</p>';
+}
+</script>
+</body>
+</html>
