@@ -273,14 +273,24 @@ function renderCalendar() {
       const wt = s['作業区分'] || 'その他';
       const cancelled = s['状態'] === 'キャンセル';
       const label = (s['車両名'] || s['メモ'] || wt).substring(0, 8);
-      html += `<div class="cal-chip workType-${wt}${cancelled ? ' cancelled' : ''}">${label}</div>`;
+      const safeId = String(s['予定ID'] || '').replace(/"/g, '&quot;');
+      html += `<div class="cal-chip workType-${wt}${cancelled ? ' cancelled' : ''}" data-id="${safeId}">${label}</div>`;
     });
     if (daySchedules.length > MAX_SHOW) {
       html += `<div class="cal-more">+${daySchedules.length - MAX_SHOW}</div>`;
     }
 
     cell.innerHTML = html;
-    cell.addEventListener('click', () => openDayDetail(dateStr));
+    // chip クリック → 編集モーダル、それ以外（空白） → 新規追加モーダル
+    cell.addEventListener('click', (e) => {
+      const chip = e.target.closest('.cal-chip');
+      if (chip && chip.dataset.id) {
+        e.stopPropagation();
+        openEditModal(chip.dataset.id);
+      } else {
+        openDayDetail(dateStr);
+      }
+    });
     cal.appendChild(cell);
   }
 
