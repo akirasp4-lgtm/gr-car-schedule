@@ -602,6 +602,52 @@ async function deleteSchedule() {
 
 document.getElementById('submit-btn').addEventListener('click', submitSchedule);
 document.getElementById('delete-btn').addEventListener('click', deleteSchedule);
+
+// ====== Haptic ======
+function hapticTap() { try { navigator.vibrate?.(8); } catch (_) {} }
+function hapticSuccess() { try { navigator.vibrate?.([10,40,15]); } catch (_) {} }
+
+// ====== Pull to refresh ======
+let ptrStartY = null;
+document.addEventListener('touchstart', e => {
+  if (window.scrollY > 0) { ptrStartY = null; return; }
+  if (document.querySelector('.modal-bg.active')) { ptrStartY = null; return; }
+  ptrStartY = e.touches[0].clientY;
+});
+document.addEventListener('touchmove', e => {
+  if (ptrStartY === null) return;
+  const dy = e.touches[0].clientY - ptrStartY;
+  if (dy > 80) {
+    ptrStartY = null;
+    hapticTap();
+    loadData();
+  }
+});
+
+// ====== Install banner ======
+let deferredPrompt = null;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredPrompt = e;
+  if (!localStorage.getItem('gr-car-install-banner-dismissed-v1')) {
+    document.getElementById('install-banner').classList.add('active');
+  }
+});
+
+document.getElementById('install-dismiss').addEventListener('click', () => {
+  document.getElementById('install-banner').classList.remove('active');
+  localStorage.setItem('gr-car-install-banner-dismissed-v1', '1');
+});
+
+document.getElementById('install-accept').addEventListener('click', async () => {
+  if (deferredPrompt) {
+    deferredPrompt.prompt();
+    await deferredPrompt.userChoice;
+    deferredPrompt = null;
+  }
+  document.getElementById('install-banner').classList.remove('active');
+  localStorage.setItem('gr-car-install-banner-dismissed-v1', '1');
+});
 </script>
 </body>
 </html>
