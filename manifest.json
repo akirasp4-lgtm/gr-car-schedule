@@ -1,6 +1,6 @@
 {
-  "name": "車屋予定管理",
-  "short_name": "車屋予定",
+  "name": "GRCMS予定表",
+  "short_name": "GRCMS予定",
   "description": "GRCMS 予定管理 PWA",
   "start_url": "./index.html",
   "display": "standalone",

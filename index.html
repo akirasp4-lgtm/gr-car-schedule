@@ -4,13 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#1D9E75">
-<title>車屋予定管理</title>
+<title>GRCMS予定表</title>
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <!-- iOS Safari スタンドアロン起動用 -->
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="車屋予定">
+<meta name="apple-mobile-web-app-title" content="GRCMS予定">
 <style>
   *,*::before,*::after { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Yu Gothic', sans-serif; background: #f2f2f7; color: #1a1a1a; -webkit-tap-highlight-color: transparent; overscroll-behavior: none; }
@@ -123,6 +123,14 @@
   .detail-fs-actions .btn-primary { background: #1D9E75; color: #fff; }
   .detail-fs-actions .btn-danger { background: #E8384F; color: #fff; }
 
+  /* ===== Pull to refresh インジケーター ===== */
+  .ptr-indicator { position: fixed; top: calc(env(safe-area-inset-top) + 8px); left: 50%; transform: translate(-50%, -100%); background: rgba(29,158,117,0.95); color: #fff; padding: 8px 18px; border-radius: 20px; font-size: 13px; font-weight: 600; z-index: 250; box-shadow: 0 2px 8px rgba(0,0,0,0.15); transition: transform 0.2s ease, opacity 0.2s ease; opacity: 0; pointer-events: none; white-space: nowrap; }
+  .ptr-indicator.show { transform: translate(-50%, 0); opacity: 1; }
+
+  /* ===== chip / list-item タップフィードバック ===== */
+  .cal-cell:active { background: #eef9f3; }
+  .list-item:active, .day-list-item:active { background: #eef9f3; }
+
   /* ===== ローディングオーバーレイ ===== */
   .app-loading { position: fixed; inset: 0; background: #f2f2f7; z-index: 400; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; }
   .app-loading.hidden { display: none; }
@@ -156,8 +164,11 @@
   <div class="text">読み込み中...</div>
 </div>
 
+<!-- Pull-to-refresh インジケーター -->
+<div class="ptr-indicator" id="ptr-indicator">↓ 引き下げて更新</div>
+
 <header>
-  <h1>🚗 車屋予定管理</h1>
+  <h1>🚗 GRCMS予定表</h1>
   <button id="refresh-btn" style="background:transparent;border:1px solid rgba(255,255,255,0.4);color:#fff;padding:4px 10px;border-radius:6px;font-size:12px;cursor:pointer">⟳ 更新</button>
 </header>
 
@@ -1019,9 +1030,19 @@ document.getElementById('delete-btn').addEventListener('click', deleteSchedule);
 function hapticTap() { try { navigator.vibrate?.(8); } catch (_) {} }
 function hapticSuccess() { try { navigator.vibrate?.([10,40,15]); } catch (_) {} }
 
-// ====== Pull to refresh ======
+// ====== Pull to refresh (3状態 + 視覚インジケーター) ======
 let ptrStartY = null;
 let ptrStartX = null;
+let ptrTriggered = false;  // 80px 超えたか
+let ptrHapticFired = false; // 触覚は 80 超え瞬間に 1 回だけ
+const ptrIndicator = document.getElementById('ptr-indicator');
+
+function _ptrSetIndicator(text, show) {
+  if (!ptrIndicator) return;
+  ptrIndicator.textContent = text;
+  ptrIndicator.classList.toggle('show', show);
+}
+
 document.addEventListener('touchstart', e => {
   if (window.scrollY > 0) { ptrStartY = null; return; }
   // モーダル・詳細フルスクリーン open 中は PTR を完全に無効化
@@ -1030,7 +1051,10 @@ document.addEventListener('touchstart', e => {
   if (e.touches.length !== 1) { ptrStartY = null; return; }
   ptrStartY = e.touches[0].clientY;
   ptrStartX = e.touches[0].clientX;
+  ptrTriggered = false;
+  ptrHapticFired = false;
 }, { passive: true });
+
 document.addEventListener('touchmove', e => {
   if (ptrStartY === null) return;
   const dy = e.touches[0].clientY - ptrStartY;
@@ -1038,13 +1062,39 @@ document.addEventListener('touchmove', e => {
   // 横方向に大きく動いた場合 (= 横スワイプ) は PTR を取り消す
   if (Math.abs(dx) > Math.abs(dy) * 0.8) {
     ptrStartY = null;
+    _ptrSetIndicator('↓ 引き下げて更新', false);
     return;
   }
+  // 3 状態のインジケーター切替
   if (dy > 80) {
-    ptrStartY = null;
-    hapticTap();
-    loadData();
+    if (!ptrTriggered) {
+      ptrTriggered = true;
+      if (!ptrHapticFired) { hapticTap(); ptrHapticFired = true; }
+    }
+    _ptrSetIndicator('✓ 離して更新', true);
+  } else if (dy > 30) {
+    ptrTriggered = false;
+    _ptrSetIndicator('↓ 引き下げて更新', true);
+  } else {
+    ptrTriggered = false;
+    _ptrSetIndicator('↓ 引き下げて更新', false);
   }
+}, { passive: true });
+
+document.addEventListener('touchend', () => {
+  if (ptrStartY === null) return;
+  if (ptrTriggered) {
+    _ptrSetIndicator('🔄 更新中…', true);
+    hapticSuccess();
+    Promise.resolve(loadData()).finally(() => {
+      setTimeout(() => _ptrSetIndicator('↓ 引き下げて更新', false), 500);
+    });
+  } else {
+    _ptrSetIndicator('↓ 引き下げて更新', false);
+  }
+  ptrStartY = null;
+  ptrTriggered = false;
+  ptrHapticFired = false;
 }, { passive: true });
 
 // ====== Install banner ======
