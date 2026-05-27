@@ -388,6 +388,109 @@ function init() {
 }
 
 init();
+
+// ====== Modal open/close ======
+function openAddModal() {
+  document.getElementById('modal-title').textContent = '予定を追加';
+  document.getElementById('delete-btn').style.display = 'none';
+  document.getElementById('status-field').style.display = 'none';
+
+  state.selectedScheduleId = null;
+  if (!document.getElementById('form-date').value) {
+    document.getElementById('form-date').value = state.todayStr;
+  }
+  document.getElementById('form-time-start').value = '09:00';
+  document.getElementById('form-place').value = '';
+  document.getElementById('form-memo').value = '';
+  document.getElementById('form-worktype').value = '';
+  document.getElementById('form-status').value = '予約';
+
+  document.querySelectorAll('#worktype-chips .chip').forEach(c => c.classList.remove('selected'));
+  document.querySelectorAll('#status-chips .chip').forEach(c => c.classList.remove('selected'));
+  document.querySelector('#status-chips .chip[data-status="予約"]').classList.add('selected');
+
+  applyWorkTypeLock();
+  document.getElementById('schedule-modal-bg').classList.add('active');
+}
+
+function openEditModal(id) {
+  const s = state.schedules.find(x => x['予定ID'] === id);
+  if (!s) return;
+  state.selectedScheduleId = id;
+
+  document.getElementById('modal-title').textContent = '予定を編集';
+  document.getElementById('delete-btn').style.display = 'block';
+  document.getElementById('status-field').style.display = 'block';
+
+  document.getElementById('form-date').value = s['開始日時'] ? s['開始日時'].substring(0,10) : '';
+  document.getElementById('form-time-start').value = s['開始日時'] ? s['開始日時'].substring(11,16) : '09:00';
+  document.getElementById('form-place').value = s['場所・行先'] || '';
+  document.getElementById('form-memo').value = s['メモ'] || '';
+
+  const wt = s['作業区分'] || '';
+  document.getElementById('form-worktype').value = wt;
+  document.querySelectorAll('#worktype-chips .chip').forEach(c => c.classList.toggle('selected', c.dataset.worktype === wt));
+
+  const st = s['状態'] || '予約';
+  document.getElementById('form-status').value = st;
+  document.querySelectorAll('#status-chips .chip').forEach(c => c.classList.toggle('selected', c.dataset.status === st));
+
+  document.getElementById('form-staff').value = s['担当LINE_ID'] || s['担当スタッフ'] || '';
+  document.getElementById('form-vehicle').value = s['車両ID'] || '';
+
+  applyWorkTypeLock();
+  document.getElementById('schedule-modal-bg').classList.add('active');
+}
+
+function closeModal() {
+  document.getElementById('schedule-modal-bg').classList.remove('active');
+}
+
+// ====== Worktype gate ======
+function applyWorkTypeLock() {
+  const wt = document.getElementById('form-worktype').value;
+  const locked = document.getElementById('locked-fields');
+  const submitBtn = document.getElementById('submit-btn');
+  if (!wt) {
+    locked.classList.add('locked');
+    submitBtn.disabled = true;
+    submitBtn.style.opacity = '0.45';
+  } else {
+    locked.classList.remove('locked');
+    submitBtn.disabled = false;
+    submitBtn.style.opacity = '';
+  }
+}
+
+document.querySelectorAll('#worktype-chips .chip').forEach(chip => {
+  chip.addEventListener('click', () => {
+    document.querySelectorAll('#worktype-chips .chip').forEach(c => c.classList.remove('selected'));
+    chip.classList.add('selected');
+    document.getElementById('form-worktype').value = chip.dataset.worktype;
+    applyWorkTypeLock();
+  });
+});
+
+document.querySelectorAll('#status-chips .chip').forEach(chip => {
+  chip.addEventListener('click', () => {
+    document.querySelectorAll('#status-chips .chip').forEach(c => c.classList.remove('selected'));
+    chip.classList.add('selected');
+    document.getElementById('form-status').value = chip.dataset.status;
+  });
+});
+
+document.getElementById('open-add-modal').addEventListener('click', openAddModal);
+document.getElementById('cancel-btn').addEventListener('click', closeModal);
+
+// ====== Staff dropdown ======
+function populateStaffSelect() {
+  const sel = document.getElementById('form-staff');
+  sel.innerHTML = '<option value="">（選択してください）</option>' +
+    state.staffs
+      .filter(s => s['有効フラグ'] !== false && s['有効フラグ'] !== 'FALSE' && s['有効フラグ'] !== 'false')
+      .map(s => `<option value="${s['LINE_ID'] || s['氏名']}">${s['氏名']}</option>`)
+      .join('');
+}
 </script>
 </body>
 </html>
