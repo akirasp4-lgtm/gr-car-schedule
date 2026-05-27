@@ -38,10 +38,12 @@ function doPost(e) {
     const action = String(body.action || '');
     const ss = SpreadsheetApp.getActiveSpreadsheet();
 
-    // === ここに各アクション分岐を追加していく（Task 4 以降） ===
-    if (action === 'meta_init') {
-      return handleMetaInit_(ss, body);
-    }
+    // === Action dispatch ===
+    if (action === 'schedule_add')    return handleScheduleAdd_(ss, body);
+    if (action === 'schedule_update') return handleScheduleUpdate_(ss, body);
+    if (action === 'schedule_delete') return handleScheduleDelete_(ss, body);
+    if (action === 'schedule_list')   return handleScheduleList_(ss, body);
+    if (action === 'meta_init')       return handleMetaInit_(ss, body);
 
     return error('未知のアクション: ' + action);
   } catch (err) {
@@ -213,4 +215,122 @@ function handleMetaInit_(ss, body) {
 
   logOperation_(ss, 'meta_init', '', 'system', 'admin', { created });
   return ok({ sheets_created: created });
+}
+
+// ====== Action: schedule_add ======
+function handleScheduleAdd_(ss, body) {
+  checkToken_(body);
+  const ev = body.event || body;
+  const id = generateScheduleId_();
+  const now = new Date();
+  const sheet = getOrCreateScheduleSheet_(ss);
+
+  const row = SCHEDULE_HEADERS.map(h => {
+    switch (h) {
+      case '予定ID': return id;
+      case '開始日時': return String(ev.time_start || ev.start_dt || '');
+      case '終了予定日時': return String(ev.time_end || ev.end_dt || '');
+      case '担当スタッフ': return String(ev.staffName || '');
+      case '担当LINE_ID': return String(ev.staffLineId || '');
+      case '作業区分': return String(ev.workType || 'その他');
+      case '車両ID': return String(ev.vehicleId || '');
+      case '車両名': return String(ev.vehicleName || '');
+      case 'ナンバー': return String(ev.vehiclePlate || '');
+      case '場所・行先': return String(ev.place || '');
+      case 'メモ': return String(ev.memo || '');
+      case '状態': return String(ev.status || '予約');
+      case '起点': return String(ev.source || 'Web');
+      case '顧客名': return String(ev.customerName || '');
+      case '顧客LINE_ID': return String(ev.customerLineId || '');
+      case 'GRCMS_受付ID': return String(ev.grcmsIntakeId || '');
+      case '写真URL': return String(ev.photoUrls || '');
+      case '登録日時': return now;
+      case '更新日時': return now;
+      case '更新者': return String(ev.updatedBy || ev.staffName || '');
+      default: return '';
+    }
+  });
+
+  sheet.appendRow(row);
+  logOperation_(ss, 'schedule_add', id, ev.updatedBy || ev.staffName || '', ev.source || 'Web', ev);
+  return ok({ id });
+}
+
+// ====== Action: schedule_update ======
+function handleScheduleUpdate_(ss, body) {
+  checkToken_(body);
+  const ev = body.event || body;
+  const id = String(ev.id || '');
+  if (!id) return error('id が指定されていません');
+
+  const sheet = getOrCreateScheduleSheet_(ss);
+  const found = findRowById_(sheet, SCHEDULE_HEADERS.indexOf('予定ID'), id);
+  if (!found) return error('対象が見つかりません: ' + id);
+
+  const fieldMap = {
+    time_start: '開始日時', time_end: '終了予定日時',
+    staffName: '担当スタッフ', staffLineId: '担当LINE_ID',
+    workType: '作業区分',
+    vehicleId: '車両ID', vehicleName: '車両名', vehiclePlate: 'ナンバー',
+    place: '場所・行先', memo: 'メモ', status: '状態',
+    customerName: '顧客名', customerLineId: '顧客LINE_ID',
+    grcmsIntakeId: 'GRCMS_受付ID', photoUrls: '写真URL',
+    updatedBy: '更新者'
+  };
+
+  const updated = applyPartialUpdate_(sheet, found.row, SCHEDULE_HEADERS, found.data, ev, fieldMap);
+  logOperation_(ss, 'schedule_update', id, ev.updatedBy || '', ev.source || 'Web', ev);
+  return ok({ updated: id });
+}
+
+// ====== Action: schedule_delete (論理削除) ======
+function handleScheduleDelete_(ss, body) {
+  checkToken_(body);
+  const id = String(body.id || '');
+  if (!id) return error('id が指定されていません');
+
+  const sheet = getOrCreateScheduleSheet_(ss);
+  const found = findRowById_(sheet, SCHEDULE_HEADERS.indexOf('予定ID'), id);
+  if (!found) return error('対象が見つかりません: ' + id);
+
+  const statusCol = SCHEDULE_HEADERS.indexOf('状態') + 1;
+  const updCol = SCHEDULE_HEADERS.indexOf('更新日時') + 1;
+  sheet.getRange(found.row, statusCol).setValue('キャンセル');
+  sheet.getRange(found.row, updCol).setValue(new Date());
+
+  logOperation_(ss, 'schedule_delete', id, body.updatedBy || '', body.source || 'Web', { reason: 'logical_delete' });
+  return ok({ cancelled: id });
+}
+
+// ====== Action: schedule_list ======
+function handleScheduleList_(ss, body) {
+  checkToken_(body);
+  const sheet = getOrCreateScheduleSheet_(ss);
+  const tz = Session.getScriptTimeZone();
+  const data = sheet.getDataRange().getValues();
+  if (data.length < 2) return ok({ rows: [], count: 0 });
+
+  const headers = data[0];
+  let rows = data.slice(1).map(r => {
+    const obj = {};
+    headers.forEach((h, j) => {
+      const v = r[j];
+      if (v instanceof Date) {
+        obj[h] = Utilities.formatDate(v, tz, "yyyy-MM-dd'T'HH:mm:ssXXX");
+      } else {
+        obj[h] = (v === undefined || v === null) ? '' : String(v);
+      }
+    });
+    return obj;
+  });
+
+  // Filters
+  if (body.dateFrom) rows = rows.filter(r => r['開始日時'] && r['開始日時'] >= body.dateFrom);
+  if (body.dateTo)   rows = rows.filter(r => r['開始日時'] && r['開始日時'] <= body.dateTo);
+  if (body.staffId)  rows = rows.filter(r => r['担当LINE_ID'] === body.staffId || r['担当スタッフ'] === body.staffId);
+  if (body.vehicleId) rows = rows.filter(r => r['車両ID'] === body.vehicleId);
+  if (body.status)   rows = rows.filter(r => r['状態'] === body.status);
+  if (body.excludeCancelled) rows = rows.filter(r => r['状態'] !== 'キャンセル');
+
+  return ok({ rows, count: rows.length });
 }
