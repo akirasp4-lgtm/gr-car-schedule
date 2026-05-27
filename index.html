@@ -197,8 +197,118 @@
 </div>
 
 <script>
-// JavaScript は Task 11 以降で追加
+// ====== Config ======
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbxQqIYdEQr4M4sVxEGCTP2_hbJtKcsXwBviQ16LtuoYNMPM-cU_mCXjP0hR69vUqzrB/exec';
+
+// ====== State ======
+const state = {
+  schedules: [],
+  vehicles: [],
+  staffs: [],
+  currentDate: new Date(),
+  todayStr: '',
+  selectedScheduleId: null,
+};
+
+// ====== Utils ======
+function pad2(n) { return String(n).padStart(2, '0'); }
+function toDateStr(d) { return d.getFullYear() + '-' + pad2(d.getMonth()+1) + '-' + pad2(d.getDate()); }
+function toTimeStr(d) { return pad2(d.getHours()) + ':' + pad2(d.getMinutes()); }
+
+// ====== Calendar rendering ======
+function renderCalendar() {
+  const year = state.currentDate.getFullYear();
+  const month = state.currentDate.getMonth();
+  document.getElementById('month-label').textContent = year + '年 ' + (month+1) + '月';
+
+  const cal = document.getElementById('calendar');
+  cal.innerHTML = '';
+
+  // ヘッダ
+  ['月','火','水','木','金','土','日'].forEach((label, idx) => {
+    const h = document.createElement('div');
+    h.className = 'cal-header';
+    if (idx === 5) h.classList.add('sat');
+    if (idx === 6) h.classList.add('sun');
+    h.textContent = label;
+    cal.appendChild(h);
+  });
+
+  // 1 日の曜日（月=0 始まりへ変換）
+  const firstDay = (new Date(year, month, 1).getDay() + 6) % 7;
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const prevMonthDays = new Date(year, month, 0).getDate();
+
+  // 前月の埋め込み
+  for (let i = firstDay - 1; i >= 0; i--) {
+    const d = prevMonthDays - i;
+    const cell = document.createElement('div');
+    cell.className = 'cal-cell other-month';
+    cell.innerHTML = `<div class="date">${d}</div>`;
+    cal.appendChild(cell);
+  }
+
+  // 当月
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateObj = new Date(year, month, d);
+    const dow = (dateObj.getDay() + 6) % 7;
+    const dateStr = toDateStr(dateObj);
+
+    const cell = document.createElement('div');
+    cell.className = 'cal-cell';
+    if (dow === 5) cell.classList.add('sat');
+    if (dow === 6) cell.classList.add('sun');
+    if (dateStr === state.todayStr) cell.classList.add('today');
+
+    let html = `<div class="date">${d}</div>`;
+
+    // この日の予定 chip
+    const daySchedules = state.schedules.filter(s => {
+      const ds = s['開始日時'] ? s['開始日時'].substring(0, 10) : '';
+      return ds === dateStr;
+    });
+
+    const MAX_SHOW = 3;
+    daySchedules.slice(0, MAX_SHOW).forEach(s => {
+      const wt = s['作業区分'] || 'その他';
+      const cancelled = s['状態'] === 'キャンセル';
+      const label = (s['車両名'] || s['メモ'] || wt).substring(0, 8);
+      html += `<div class="cal-chip workType-${wt}${cancelled ? ' cancelled' : ''}">${label}</div>`;
+    });
+    if (daySchedules.length > MAX_SHOW) {
+      html += `<div class="cal-more">+${daySchedules.length - MAX_SHOW}</div>`;
+    }
+
+    cell.innerHTML = html;
+    cell.addEventListener('click', () => openDayDetail(dateStr));
+    cal.appendChild(cell);
+  }
+
+  // 次月の埋め込み
+  const totalCells = firstDay + daysInMonth;
+  const trailing = (7 - totalCells % 7) % 7;
+  for (let i = 1; i <= trailing; i++) {
+    const cell = document.createElement('div');
+    cell.className = 'cal-cell other-month';
+    cell.innerHTML = `<div class="date">${i}</div>`;
+    cal.appendChild(cell);
+  }
+}
+
+function openDayDetail(dateStr) {
+  document.getElementById('form-date').value = dateStr;
+  openAddModal();
+}
+
+// ====== Month navigation ======
+document.getElementById('prev-month').addEventListener('click', () => {
+  state.currentDate.setMonth(state.currentDate.getMonth() - 1);
+  renderCalendar();
+});
+document.getElementById('next-month').addEventListener('click', () => {
+  state.currentDate.setMonth(state.currentDate.getMonth() + 1);
+  renderCalendar();
+});
 </script>
 </body>
 </html>
