@@ -284,6 +284,17 @@ function pad2(n) { return String(n).padStart(2, '0'); }
 function toDateStr(d) { return d.getFullYear() + '-' + pad2(d.getMonth()+1) + '-' + pad2(d.getDate()); }
 function toTimeStr(d) { return pad2(d.getHours()) + ':' + pad2(d.getMinutes()); }
 
+// HTML エスケープ (XSS 対策: 車両名・メモ・氏名などスプシ由来データを innerHTML に挿入する箇所で使う)
+function escapeHtml(v) {
+  if (v === null || v === undefined) return '';
+  return String(v)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 // ====== Calendar rendering ======
 function renderCalendar() {
   const year = state.currentDate.getFullYear();
@@ -340,10 +351,9 @@ function renderCalendar() {
     const MAX_SHOW = 3;
     daySchedules.slice(0, MAX_SHOW).forEach(s => {
       const wt = s['作業区分'] || 'その他';
-      const cancelled = s['状態'] === 'キャンセル';
+      const cancelled = String(s['状態'] || '').trim() === 'キャンセル';
       const label = (s['車両名'] || s['メモ'] || wt).substring(0, 8);
-      const safeId = String(s['予定ID'] || '').replace(/"/g, '&quot;');
-      html += `<div class="cal-chip workType-${wt}${cancelled ? ' cancelled' : ''}" data-id="${safeId}">${label}</div>`;
+      html += `<div class="cal-chip workType-${escapeHtml(wt)}${cancelled ? ' cancelled' : ''}" data-id="${escapeHtml(s['予定ID'])}">${escapeHtml(label)}</div>`;
     });
     if (daySchedules.length > MAX_SHOW) {
       html += `<div class="cal-more">+${daySchedules.length - MAX_SHOW}</div>`;
@@ -405,13 +415,12 @@ function renderCalDay() {
     if (s['場所・行先']) lines.push(s['場所・行先']);
     if (s['メモ']) lines.push(s['メモ']);
     const main = lines[0] || wt;
-    const sub = lines.slice(1).join(' / ');
-    const safeId = String(s['予定ID'] || '').replace(/"/g, '&quot;');
-    return `<div class="day-list-item workType-${wt}${cancelled ? ' cancelled' : ''}" data-id="${safeId}">
-      <span class="time">${time}</span>
+    const sub = lines.slice(1).join(' / ') || wt;
+    return `<div class="day-list-item workType-${escapeHtml(wt)}${cancelled ? ' cancelled' : ''}" data-id="${escapeHtml(s['予定ID'])}">
+      <span class="time">${escapeHtml(time)}</span>
       <span class="meta">
-        <div>${main}</div>
-        ${sub ? `<div class="wt">${sub}</div>` : `<div class="wt">${wt}</div>`}
+        <div>${escapeHtml(main)}</div>
+        <div class="wt">${escapeHtml(sub)}</div>
       </span>
       <span class="chev">›</span>
     </div>`;
@@ -457,10 +466,11 @@ function renderCalDetail() {
 
   document.getElementById('cal-detail-title').textContent = `${m || '?'}月${d || '?'}日 ${time || '--:--'}`;
 
+  // ラベルとデータを完全分離。html フィールドはサニタイズ済の安全な HTML (workType/status の白リスト) のみ。
   const rows = [
-    { label: '日時', value: `${y}年${m}月${d}日 ${time || '--:--'}`, raw: dt },
-    { label: '作業区分', html: `<span class="badge workType-${wt}">${wt}</span>` },
-    { label: '状態',     html: `<span class="badge status-${st}">${st}</span>` },
+    { label: '日時', value: `${y}年${m}月${d}日 ${time || '--:--'}` },
+    { label: '作業区分', html: `<span class="badge workType-${escapeHtml(wt)}">${escapeHtml(wt)}</span>` },
+    { label: '状態',     html: `<span class="badge status-${escapeHtml(st)}">${escapeHtml(st)}</span>` },
     { label: '担当スタッフ', value: s['担当スタッフ'] || '' },
     { label: '車両',     value: s['車両名'] ? `${s['車両名']}${s['ナンバー'] ? ' (' + s['ナンバー'] + ')' : ''}` : '' },
     { label: '場所・行先', value: s['場所・行先'] || '' },
@@ -469,14 +479,17 @@ function renderCalDetail() {
     { label: '予定ID',   value: s['予定ID'] || '' }
   ];
   document.getElementById('cal-detail-body').innerHTML = rows.map(r => {
-    const content = r.html
-      ? r.html
-      : (r.value
-          ? `<div class="value">${String(r.value).replace(/</g,'&lt;')}</div>`
-          : `<div class="value empty">—</div>`);
+    let inner;
+    if (r.html) {
+      inner = `<div class="value">${r.html}</div>`;
+    } else if (r.value) {
+      inner = `<div class="value">${escapeHtml(r.value)}</div>`;
+    } else {
+      inner = `<div class="value empty">—</div>`;
+    }
     return `<div class="detail-row">
-      <div class="label">${r.label}</div>
-      ${r.html ? `<div class="value">${r.html}</div>` : content}
+      <div class="label">${escapeHtml(r.label)}</div>
+      ${inner}
     </div>`;
   }).join('');
 
@@ -580,11 +593,11 @@ function renderTodayList() {
   list.innerHTML = todays.map(s => {
     const time = s['開始日時'] ? s['開始日時'].substring(11, 16) : '--:--';
     const wt = s['作業区分'] || 'その他';
-    const cancelled = s['状態'] === 'キャンセル';
+    const cancelled = String(s['状態'] || '').trim() === 'キャンセル';
     const label = [s['車両名'], s['メモ']].filter(Boolean).join(' / ') || wt;
-    return `<div class="list-item workType-${wt}${cancelled ? ' cancelled' : ''}" data-id="${s['予定ID']}">
-      <span class="time">${time}</span>
-      <span>${label}</span>
+    return `<div class="list-item workType-${escapeHtml(wt)}${cancelled ? ' cancelled' : ''}" data-id="${escapeHtml(s['予定ID'])}">
+      <span class="time">${escapeHtml(time)}</span>
+      <span>${escapeHtml(label)}</span>
     </div>`;
   }).join('');
 
@@ -698,6 +711,9 @@ init();
 
 // ====== Modal open/close ======
 function openAddModal(presetDate) {
+  // 日別モーダル・詳細フルスクリーンが残っていれば必ず閉じる (state 不整合防止)
+  closeCalDetail();
+  closeCalDay();
   document.getElementById('modal-title').textContent = '予定を追加';
   document.getElementById('delete-btn').style.display = 'none';
   document.getElementById('status-field').style.display = 'none';
@@ -724,6 +740,9 @@ function openAddModal(presetDate) {
 function openEditModal(id) {
   const s = state.schedules.find(x => x['予定ID'] === id);
   if (!s) return;
+  // 日別モーダル・詳細フルスクリーンが残っていれば必ず閉じる (state 不整合防止)
+  closeCalDetail();
+  closeCalDay();
   state.selectedScheduleId = id;
 
   document.getElementById('modal-title').textContent = '予定を編集';
@@ -796,7 +815,7 @@ function populateStaffSelect() {
   sel.innerHTML = '<option value="">（選択してください）</option>' +
     state.staffs
       .filter(s => s['有効フラグ'] !== false && s['有効フラグ'] !== 'FALSE' && s['有効フラグ'] !== 'false')
-      .map(s => `<option value="${s['LINE_ID'] || s['氏名']}">${s['氏名']}</option>`)
+      .map(s => `<option value="${escapeHtml(s['LINE_ID'] || s['氏名'])}">${escapeHtml(s['氏名'])}</option>`)
       .join('');
 }
 
@@ -821,7 +840,7 @@ function populateVehicleSelect() {
   sel.innerHTML = '<option value="">（選択してください）</option>' +
     sorted.map(v => {
       const recent = lastUsed[v['車両ID']] ? ' ★' : '';
-      return `<option value="${v['車両ID']}" data-name="${v['車両名']}" data-plate="${v['ナンバー']}">${v['車両名']}${recent}</option>`;
+      return `<option value="${escapeHtml(v['車両ID'])}" data-name="${escapeHtml(v['車両名'])}" data-plate="${escapeHtml(v['ナンバー'])}">${escapeHtml(v['車両名'])}${recent}</option>`;
     }).join('');
 }
 
@@ -933,20 +952,31 @@ function hapticSuccess() { try { navigator.vibrate?.([10,40,15]); } catch (_) {}
 
 // ====== Pull to refresh ======
 let ptrStartY = null;
+let ptrStartX = null;
 document.addEventListener('touchstart', e => {
   if (window.scrollY > 0) { ptrStartY = null; return; }
+  // モーダル・詳細フルスクリーン open 中は PTR を完全に無効化
   if (document.querySelector('.modal-bg.active')) { ptrStartY = null; return; }
+  if (document.querySelector('.detail-fullscreen.active')) { ptrStartY = null; return; }
+  if (e.touches.length !== 1) { ptrStartY = null; return; }
   ptrStartY = e.touches[0].clientY;
-});
+  ptrStartX = e.touches[0].clientX;
+}, { passive: true });
 document.addEventListener('touchmove', e => {
   if (ptrStartY === null) return;
   const dy = e.touches[0].clientY - ptrStartY;
+  const dx = e.touches[0].clientX - ptrStartX;
+  // 横方向に大きく動いた場合 (= 横スワイプ) は PTR を取り消す
+  if (Math.abs(dx) > Math.abs(dy) * 0.8) {
+    ptrStartY = null;
+    return;
+  }
   if (dy > 80) {
     ptrStartY = null;
     hapticTap();
     loadData();
   }
-});
+}, { passive: true });
 
 // ====== Install banner ======
 let deferredPrompt = null;
